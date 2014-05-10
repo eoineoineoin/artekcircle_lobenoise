@@ -1,9 +1,11 @@
 #include <unistd.h>
 #include <strings.h>
-#include "opi_linux.h"
 #include <stdint.h>
 #include <arpa/inet.h>
 #include <assert.h>
+
+#include "opi_linux.h"
+#include "jack_client.h"
 
 // ugly code for beautiful art :-)
 
@@ -112,7 +114,7 @@ void interpret_data_packet(OPIPKT_t &opipkt)
     //printf("pb: %d ",pb);
     printf("Frame Misc: %d, long adc data: %d, battery ok: %d\n", opipkt.payload[pb], opipkt.payload[pb] & 0x80, opipkt.payload[pb] & 0x01);
     pb++;
-    //printf("pb: %d ",pb);
+    printf("pb: %d ",pb);
     printf("ADC Samples Data Len: %d\n", opipkt.length - 17);
     for (unsigned int adcc = 0; adcc < (opipkt.length - 17) / 2; adcc++)
     {
@@ -125,13 +127,33 @@ void interpret_data_packet(OPIPKT_t &opipkt)
     printf("ED: %d\n", ntohs(opipkt.payload[pb++]));
 }
 
+void copy_data_to_jack(OPIPKT_t &opipkt)
+{
+    unsigned int pb = 8;
+    for (unsigned int adcc = 0; adcc < (opipkt.length - 17) / 2; adcc++)
+    {
+        jack_append_new_data( ((int16_t) opipkt.payload[pb++]) << 8 + ((int16_t) opipkt.payload[pb++] & 0xFC) );
+    }
+
+    //let's not do crc, we don't really need correct data anyway ... it's art ;->
+}
 
 int main(int argc, char* argv[])
 {
     HANDLE comprt;
     OPIPKT_t onepkt;
+
+    jack_init();
+
     int rc = init_openucd_and_module(comprt);
-    if (rc == 0) while (1)
+    if (rc != 0)
+    {
+        opi_closeucd_com(&comprt);
+        return rc;
+    }
+
+    jack_run();
+     while (1)
     {
         //rc = opiucd_status(&comprt, &onepkt);
         bzero(&onepkt, sizeof(OPIPKT_t));
@@ -140,6 +162,7 @@ int main(int argc, char* argv[])
         {
             opipkt_dump(&onepkt);
             interpret_data_packet(onepkt);
+            copy_data_to_jack(onepkt);
         }
         else if (rc == 0)
         {
@@ -148,6 +171,8 @@ int main(int argc, char* argv[])
         else
             break;
     }
+
+    jack_byebye();
     opi_closeucd_com(&comprt);
     return rc;
 }
