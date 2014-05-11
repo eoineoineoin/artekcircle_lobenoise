@@ -14,7 +14,7 @@
 
 
 // ringbuffer:
-#define EGG_RINGBUFFER_SIZE 64*2
+#define EGG_RINGBUFFER_SIZE (64*2)
 jack_ringbuffer_t *eeg_ringbuffer;
 
 /*one cycle of our sound*/
@@ -30,11 +30,10 @@ jack_client_t *jack_client;
 
 void jack_append_new_data(int16_t sample)
 {
-    //totally EVIL and error prone ... but we're at a hackaton
-    char sdata[2];
-    sdata[1] = sample & 0xFF;
-    sdata[0] = ((sample >> 8) & 0xFF);
-    assert(jack_ringbuffer_write(eeg_ringbuffer, sdata, 2) == 2);
+  //totally EVIL and error prone ... but we're at a hackaton
+  int len = jack_ringbuffer_write(eeg_ringbuffer, (const char*) &sample, 2);
+  if (len != 2)
+    printf("Warning: buffer overrun\n");
 }
 
 
@@ -42,8 +41,6 @@ void jack_append_new_data(int16_t sample)
 
 /*Our output port*/
 jack_port_t *output_port;
-
-typedef jack_default_audio_sample_t sample_t;
 
 /*The current sample rate*/
 jack_nframes_t sr;
@@ -54,8 +51,7 @@ int tone=262;
 
 int jack_process (jack_nframes_t nframes, void *arg){
   /*grab our output buffer*/
-  sample_t *out = (sample_t *) jack_port_get_buffer
-                                 (output_port, nframes);
+  sample_t *out = (sample_t *) jack_port_get_buffer(output_port, nframes);
 
 
   /*For each required sample*/
@@ -63,10 +59,15 @@ int jack_process (jack_nframes_t nframes, void *arg){
   {
     /*Copy the sample at the current position in the cycle to the buffer*/
     //totally EVIL and error prone ... but we're at a hackaton
-    char sdata[2];
-    assert(jack_ringbuffer_read(eeg_ringbuffer, sdata, 2) == 2);
-    *out = static_cast<sample_t>( (((int16_t) sdata[0]) << 8) + (int16_t) sdata[1] );
-
+    int16_t value = 0;
+    int len = jack_ringbuffer_read(eeg_ringbuffer, (char*) &out[i], 2);
+    if (len == 2)
+      out[i] = value / 32768.f;
+    else
+    {
+      printf("Buffer underrun!\n");
+      out[i] = 0.f;
+    }
   }
   return 0;
 }
@@ -100,7 +101,7 @@ int jack_init()
 
   /* try to become a client of the JACK server */
 
-  if ((jack_client = jack_client_open("lobenoise",(jack_options_t)0,0)) == 0)
+  if ((jack_client = jack_client_open("lobenoise",(jack_options_t)0, 0)) == 0)
   {
     fprintf (stderr, "jack server not running?\n");
     return 1;
@@ -116,7 +117,6 @@ int jack_init()
      the sample rate of the system changes.
   */
 
-
   jack_set_sample_rate_callback (jack_client, srate, 0);
 
   /* tell the JACK server to call `jack_shutdown()' if
@@ -126,32 +126,29 @@ int jack_init()
 
   jack_on_shutdown (jack_client, jack_shutdown, 0);
 
-  /* display the current sample rate. once the client is activated
-     (see below), you should rely on your own sample rate
-     callback (see above) for this value.
-  */
-  printf ("engine sample rate: %u\n", jack_get_sample_rate (jack_client));
+  ///* display the current sample rate. once the client is activated
+     //(see below), you should rely on your own sample rate
+     //callback (see above) for this value.
+  //*/
+  //printf ("engine sample rate: %u\n", jack_get_sample_rate (jack_client));
 
 
-  sr=jack_get_sample_rate (jack_client);
+  //sr=jack_get_sample_rate (jack_client);
 
   /* create two ports */
 
-
-  output_port = jack_port_register (jack_client, "output",
-                     JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
+  output_port = jack_port_register(jack_client, "output", JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
 
 }
 
-void jack_run()
+int jack_run()
 {
-  const char **ports;
-
   /* tell the JACK server that we are ready to roll */
+  const char **ports;
 
   if (jack_activate (jack_client)) {
     fprintf (stderr, "cannot activate client");
-    exit(92);
+    return 1;
   }
 
   /* connect the ports*/
@@ -170,6 +167,7 @@ void jack_run()
   }
 
   free (ports);
+  return 0;
 }
 
 void jack_byebye()
@@ -177,3 +175,4 @@ void jack_byebye()
   jack_client_close (jack_client);
   jack_ringbuffer_free(eeg_ringbuffer);
 }
+
