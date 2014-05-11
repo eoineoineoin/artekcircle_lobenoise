@@ -57,7 +57,10 @@ int init_openucd_and_module(HANDLE &comprt)
     OPIPKT_t onepkt;
     int rc = opi_openucd_com(&comprt);;
     if (rc != 0)
+    {
+        fprintf(stderr, "could not find ucd device\n");
         return 1;
+    }
     if (opiucd_onmode(&comprt) != 0)
         return 1;
     rc = opiucd_status(&comprt, &onepkt);
@@ -143,8 +146,6 @@ int main(int argc, char* argv[])
     HANDLE comprt;
     OPIPKT_t onepkt;
 
-    jack_init();
-
     int rc = init_openucd_and_module(comprt);
     if (rc != 0)
     {
@@ -152,6 +153,7 @@ int main(int argc, char* argv[])
         return rc;
     }
 
+    jack_init();
     jack_run();
     while (1)
     {

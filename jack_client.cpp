@@ -14,7 +14,7 @@
 
 
 // ringbuffer:
-#define EGG_RINGBUFFER_SIZE (64*2)
+#define EGG_RINGBUFFER_SIZE (128*4)
 jack_ringbuffer_t *eeg_ringbuffer;
 
 /*one cycle of our sound*/
@@ -60,7 +60,7 @@ int jack_process (jack_nframes_t nframes, void *arg){
     /*Copy the sample at the current position in the cycle to the buffer*/
     //totally EVIL and error prone ... but we're at a hackaton
     int16_t value = 0;
-    int len = jack_ringbuffer_read(eeg_ringbuffer, (char*) &out[i], 2);
+    int len = jack_ringbuffer_read(eeg_ringbuffer, (char*) &value, 2);
     if (len == 2)
       out[i] = value / 32768.f;
     else
