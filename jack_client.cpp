@@ -51,6 +51,8 @@ jack_nframes_t sr;
 /*frequency of our sound*/
 int tone=262;
 
+sample_t output_last_ = 0.f;
+
 int jack_process (jack_nframes_t nframes, void *arg){
   /*grab our output buffer*/
   sample_t *out = (sample_t *) jack_port_get_buffer(output_port, nframes);
@@ -65,11 +67,14 @@ int jack_process (jack_nframes_t nframes, void *arg){
     int len = jack_ringbuffer_read(eeg_ringbuffer, (char*) &value, 2);
     assert( len == 2 || len == 0);
     if (len == 2)
-      out[i] = value / 32768.f;
+    {
+      output_last_ = value / 32768.f;
+      out[i] = output_last_;
+    }
     else
     {
       printf("Buffer underrun!\n");
-      out[i] = 0.f;
+      out[i] = output_last_;
     }
   }
   return 0;
