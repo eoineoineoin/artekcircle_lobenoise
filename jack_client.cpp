@@ -2,6 +2,7 @@
 // code shamelessly based upon / lifted from http://dis-dot-dat.net/index.cgi?item=jacktuts/starting/playing_a_note
 // many thnx to james (at) dis-dot-dat.net
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -13,8 +14,10 @@
 
 
 // ringbuffer:
-#define EGG_RINGBUFFER_SIZE 64*2
+#define EGG_RINGBUFFER_SIZE (64*2)
 jack_ringbuffer_t *eeg_ringbuffer;
+
+typedef jack_default_audio_sample_t sample_t;
 
 /*one cycle of our sound*/
 sample_t* cycle;
@@ -26,8 +29,10 @@ long offset=0;
 
 void jack_append_new_data(int16_t sample)
 {
-    //totally EVIL and error prone ... but we're at a hackaton
-    assert(jack_ringbuffer_write(eeg_ringbuffer, (char*) sample, 2) == 2);
+  //totally EVIL and error prone ... but we're at a hackaton
+  int len = jack_ringbuffer_write(eeg_ringbuffer, (const char*) &sample, 2);
+  if (len != 2)
+    printf("Warning: buffer overrun\n");
 }
 
 
@@ -35,8 +40,6 @@ void jack_append_new_data(int16_t sample)
 
 /*Our output port*/
 jack_port_t *output_port;
-
-typedef jack_default_audio_sample_t sample_t;
 
 /*The current sample rate*/
 jack_nframes_t sr;
@@ -56,7 +59,15 @@ int jack_process (jack_nframes_t nframes, void *arg){
   {
     /*Copy the sample at the current position in the cycle to the buffer*/
     //totally EVIL and error prone ... but we're at a hackaton
-    assert(jack_ringbuffer_read(eeg_ringbuffer, (char*) out[i], 2) == 2);
+    int16_t value = 0;
+    int len = jack_ringbuffer_read(eeg_ringbuffer, (char*) &out[i], 2);
+    if (len == 2)
+      out[i] = value / 32768.f;
+    else
+    {
+      printf("Buffer underrun!\n");
+      out[i] = 0.f;
+    }
   }
   return 0;
 }
@@ -75,11 +86,12 @@ void jack_shutdown (void *arg){
   exit (1);
 }
 
-int jack_init()
-{
-   eeg_ringbuffer = jack_ringbuffer_create (EGG_RINGBUFFER_SIZE);
+jack_client_t *client;
 
-  jack_client_t *client;
+int jack_init(int argc, char *argv[])
+{
+  eeg_ringbuffer = jack_ringbuffer_create (EGG_RINGBUFFER_SIZE);
+
   const char **ports;
 
   /* tell the JACK server to call error() whenever it
@@ -93,7 +105,7 @@ int jack_init()
 
   /* try to become a client of the JACK server */
 
-  if ((client = jack_client_new (argv[1])) == 0) {
+  if ((client = jack_client_open ("eeg", (jack_options_t)0, NULL)) == 0) {
     fprintf (stderr, "jack server not running?\n");
     return 1;
   }
@@ -135,9 +147,10 @@ int jack_init()
 
 }
 
-void jack_run()
+int jack_run()
 {
   /* tell the JACK server that we are ready to roll */
+  const char **ports;
 
   if (jack_activate (client)) {
     fprintf (stderr, "cannot activate client");
@@ -160,6 +173,7 @@ void jack_run()
   }
 
   free (ports);
+  return 0;
 }
 
 void jack_byebye()
@@ -167,3 +181,4 @@ void jack_byebye()
   jack_client_close (client);
   jack_ringbuffer_free(eeg_ringbuffer);
 }
+

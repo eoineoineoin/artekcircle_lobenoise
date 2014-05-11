@@ -1,3 +1,4 @@
+LIBS += -ljack
 
 opijack: main.o opi_linux.o jack_client.o
 	$(CXX) $^ -o $@ $(LIBS)

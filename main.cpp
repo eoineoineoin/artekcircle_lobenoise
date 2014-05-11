@@ -143,7 +143,7 @@ int main(int argc, char* argv[])
     HANDLE comprt;
     OPIPKT_t onepkt;
 
-    jack_init();
+    jack_init(argc, argv);
 
     int rc = init_openucd_and_module(comprt);
     if (rc != 0)
