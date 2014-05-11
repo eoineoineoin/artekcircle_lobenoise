@@ -34,7 +34,7 @@ void jack_append_new_data(int16_t sample)
   int len = jack_ringbuffer_write(eeg_ringbuffer, (const char*) &sample, 2);
   assert( len == 2 || len == 0);
   if (len == 0)
-    printf("Warning: buffer overrun\n");
+    printf("Bo");
 
 }
 
@@ -73,7 +73,7 @@ int jack_process (jack_nframes_t nframes, void *arg){
     }
     else
     {
-      printf("Buffer underrun!\n");
+      printf("Bu");
       out[i] = output_last_;
     }
   }

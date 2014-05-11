@@ -132,7 +132,7 @@ void interpret_data_packet(OPIPKT_t &opipkt)
 
 void copy_data_to_jack(OPIPKT_t &opipkt)
 {
-    unsigned int pb = 8;
+    unsigned int pb = 9;
     for (unsigned int adcc = 0; adcc < (opipkt.length - 17) / 2; adcc++)
     {
         jack_append_new_data( ((int16_t) opipkt.payload[pb++]) << 8 + ((int16_t) opipkt.payload[pb++] & 0xFC) );
