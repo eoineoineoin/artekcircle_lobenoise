@@ -153,7 +153,7 @@ int main(int argc, char* argv[])
     }
 
     jack_run();
-     while (1)
+    while (1)
     {
         //rc = opiucd_status(&comprt, &onepkt);
         bzero(&onepkt, sizeof(OPIPKT_t));
@@ -171,7 +171,6 @@ int main(int argc, char* argv[])
         else
             break;
     }
-
     jack_byebye();
     opi_closeucd_com(&comprt);
     return rc;
