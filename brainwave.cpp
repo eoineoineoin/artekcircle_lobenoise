@@ -7,6 +7,8 @@
 #include <jack/types.h>
 #include <sndfile.h>
 #include <opi_linux.h>
+#include <gdk/gdk.h>
+#include <gtk/gtk.h>
 
 // RBJ bandpass code shamelessly taken from Calf
 // with crappy envelope follower slapped on it
@@ -61,8 +63,8 @@ struct sinewave
     }
     float generate(float freq)
     {
-        //float out = sin(phase) + sin(2 * phase) / 2 + sin(3 * phase) /3 +sin(4 * phase) /4 ;
-        float out = phase / (2 * M_PI);
+        float out = sin(phase);
+        //float out = phase / (2 * M_PI);
         phase += freq* 2 * M_PI / 44100;
         if (phase >= 2 * M_PI)
             phase = fmod(phase, 2 * M_PI);
@@ -152,11 +154,13 @@ uint32_t playpos = 0;
 uint32_t slowdown = 88;
 tracker trk;
 agc gainer;
+float outbuf[256];
+int outbufpos = 0;
 
 int callback(unsigned size, void *arg)
 {
     float *outdata = (float *)jack_port_get_buffer(port, size);
-    printf("%f%% %0.6f %0.6f %0.6f %0.6f\n", playpos * 100.0 / (nframes * slowdown), trk.alpha.levelTracker, trk.beta.levelTracker, trk.theta.levelTracker, trk.delta.levelTracker );
+    // printf("%f%% %0.6f %0.6f %0.6f %0.6f\n", playpos * 100.0 / (nframes * slowdown), trk.alpha.levelTracker, trk.beta.levelTracker, trk.theta.levelTracker, trk.delta.levelTracker );
     for (int i = 0; i < size; i++)
     {
         int smppos = playpos / slowdown;
@@ -164,6 +168,8 @@ int callback(unsigned size, void *arg)
         val = gainer.process(8 * val);
         val = trk.process(val);
         outdata[i] = val;
+        outbuf[outbufpos] = val;
+        outbufpos = (outbufpos + 1) & 255;
         playpos++;
         if (playpos >= slowdown * nframes - 1)
             playpos = 0;
@@ -193,6 +199,38 @@ int initeeg()
     return 1;
 }
 
+void draw(GtkWidget *dra, cairo_t *cr, gpointer data)
+{
+    guint width, height;
+    GdkRGBA color;
+
+    width = gtk_widget_get_allocated_width (dra);
+    height = gtk_widget_get_allocated_height (dra);
+    for (int i = 0; i < width; i++)
+    {
+        float ptv = outbuf[i * 255 / (width - 1)];
+        float pty = height * (1 - ptv) / 2;
+        if (i == 0)
+            cairo_move_to(cr, i, pty);
+        else
+            cairo_line_to(cr, i, pty);
+    }
+
+    gtk_style_context_get_color (gtk_widget_get_style_context (dra),
+                               (GtkStateFlags)0,
+                               &color);
+    gdk_cairo_set_source_rgba (cr, &color);
+
+    cairo_stroke (cr);    
+}
+
+gboolean my_idle_func(gpointer user_data)
+{
+    GtkWidget *w = (GtkWidget *)user_data;
+    gtk_widget_queue_draw(w);
+    return TRUE;
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -200,7 +238,7 @@ int main(int argc, char *argv[])
     {
         sndf = sf_open(argv[1], SFM_READ, &info);
         nframes = info.frames;
-        data = (float *)malloc(sizeof(float) * nframes);
+        data = (float *)malloc(sizeof(float) * nframes * info.channels);
         printf("Reading data from file, ptr=%p len=%d\n", sndf, nframes);
         sf_readf_float(sndf, data, nframes);
     }
@@ -221,6 +259,18 @@ int main(int argc, char *argv[])
             printf("----\n");
         }
     }
+    
+    gtk_init(&argc, &argv);
+    GtkWidget *win = GTK_WIDGET(gtk_window_new(GTK_WINDOW_TOPLEVEL));
+    GtkWidget *dra = gtk_drawing_area_new();
+    gtk_widget_set_size_request(dra, 512, 128);
+    gtk_container_add(GTK_CONTAINER(win), dra);
+    gtk_widget_show(win);
+    gtk_widget_show(dra);
+    g_signal_connect(G_OBJECT(win), "delete-event", G_CALLBACK(gtk_false), NULL);
+    g_signal_connect(G_OBJECT(win), "destroy", G_CALLBACK(gtk_main_quit), NULL);
+    g_signal_connect(G_OBJECT(dra), "draw", G_CALLBACK(draw), NULL);
+    
     jack_status_t status;
     jack_client_t *client = jack_client_open("brainwaves", (jack_options_t)0, &status);
     assert(client);
@@ -230,8 +280,8 @@ int main(int argc, char *argv[])
     jack_activate(client);
     jack_connect(client, "brainwaves:output", "system:playback_1");
     jack_connect(client, "brainwaves:output", "system:playback_2");
-    while(1)
-        sleep(1);
+    g_idle_add(my_idle_func, dra);
+    gtk_main();
     jack_port_unregister(client, port);
     jack_client_close(client);
     
