@@ -121,7 +121,8 @@ void interpret_data_packet(OPIPKT_t &opipkt)
     printf("ADC Samples Data Len: %d\n", opipkt.length - 17);
     for (unsigned int adcc = 0; adcc < (opipkt.length - 17) / 2; adcc++)
     {
-        printf("ADC Sample %d: %d\n", adcc, ((int16_t) opipkt.payload[pb++]) << 8 + ((int16_t) opipkt.payload[pb++] & 0xFC) );
+        int16_t v = (((int16_t) opipkt.payload[pb++]) << 8) + (((int16_t) opipkt.payload[pb++] & 0xFC));
+        printf("ADC Sample %d: %d\n", adcc, v );
     }
     //printf("pb: %d ",pb);
     assert(pb==137 || pb ==133);
