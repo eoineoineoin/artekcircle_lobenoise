@@ -9,6 +9,9 @@
 #include <opi_linux.h>
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
+#include "fft.h"
+
+using namespace std;
 
 // RBJ bandpass code shamelessly taken from Calf
 // with crappy envelope follower slapped on it
@@ -48,7 +51,7 @@ struct bandpass
         in = processFilter(in);
         in = fabs(in);
         // this value (roughly) corresponds to the cutoff frequency of the envelope follower
-        float avg = (in > levelTracker) ? 0.05 : 0.01;
+        float avg = (in > levelTracker) ? 0.05 : 0.03;
         levelTracker += (in - levelTracker) * avg;
         return levelTracker;
     }
@@ -138,9 +141,9 @@ struct agc
     {
         val *= gain;
         if (val > 1.0)
-            gain *= 0.98;
+            gain *= 0.97;
         else if (gain < 1)
-            gain *= 1.001;
+            gain *= 1.005;
         return val;
     }
 };
@@ -199,16 +202,60 @@ int initeeg()
     return 1;
 }
 
-void draw(GtkWidget *dra, cairo_t *cr, gpointer data)
+void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
 {
     guint width, height;
     GdkRGBA color;
-
+    typedef complex<float> fcomplex;
+    dsp::fft<float, 9> fourier;
+    
+    int smppos = playpos / slowdown - 512;
+    
+    if (smppos < 0)
+        smppos = 0;
+    fcomplex input[512], output[512];
+    for (int i = 0; i < 512; ++i)
+    {
+        input[i] = data[smppos];
+        smppos++;
+        if (smppos >= nframes)
+            smppos = 0;
+    }
+    fourier.calculate(input, output, false);
+    
     width = gtk_widget_get_allocated_width (dra);
     height = gtk_widget_get_allocated_height (dra);
+
     for (int i = 0; i < width; i++)
     {
-        float ptv = outbuf[i * 255 / (width - 1)];
+        int pt = i * 39 / (width - 1);
+        float ptv = abs(output[pt]);
+        float pty = height * (1 - ptv);
+        if (i == 0)
+            cairo_move_to(cr, i, pty);
+        else
+            cairo_line_to(cr, i, pty);
+    }
+    cairo_line_to(cr, width, height);
+    cairo_line_to(cr, 0, height);
+
+    color.red = 0.0;
+    color.green = 0.0;
+    color.blue = 0.0;
+    color.alpha = 1.0;
+    gdk_cairo_set_source_rgba (cr, &color);
+
+    cairo_fill (cr);    
+
+    for (int i = 0; i < width; i++)
+    {
+        int smppos = (playpos) / slowdown - i;
+        
+        if (smppos < 0)
+            smppos = 0;
+        if (smppos >= nframes)
+            smppos %= nframes;
+        float ptv = (data[smppos] - 0.02) * 8;
         float pty = height * (1 - ptv) / 2;
         if (i == 0)
             cairo_move_to(cr, i, pty);
@@ -216,9 +263,13 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer data)
             cairo_line_to(cr, i, pty);
     }
 
-    gtk_style_context_get_color (gtk_widget_get_style_context (dra),
-                               (GtkStateFlags)0,
-                               &color);
+    //gtk_style_context_get_color (gtk_widget_get_style_context (dra),
+    //                           (GtkStateFlags)0,
+    //                           &color);
+    color.red = 1.0;
+    color.green = 0.0;
+    color.blue = 0.0;
+    color.alpha = 1.0;
     gdk_cairo_set_source_rgba (cr, &color);
 
     cairo_stroke (cr);    
