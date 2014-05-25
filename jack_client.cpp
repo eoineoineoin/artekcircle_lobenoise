@@ -32,6 +32,8 @@ void jack_append_new_data(int16_t sample)
 {
   //totally EVIL and error prone ... but we're at a hackaton
   int len = jack_ringbuffer_write(eeg_ringbuffer, (const char*) &sample, 2);
+  if ( len != 2 && len != 0)
+    printf("Len = %d\n", len);
   assert( len == 2 || len == 0);
   if (len == 0)
     printf("Bo\r");
@@ -65,6 +67,8 @@ int jack_process (jack_nframes_t nframes, void *arg){
     //totally EVIL and error prone ... but we're at a hackaton
     int16_t value = 0;
     int len = jack_ringbuffer_read(eeg_ringbuffer, (char*) &value, 2);
+    if ( len != 2 && len != 0)
+        printf("Len = %d\n", len);
     assert( len == 2 || len == 0);
     if (len == 2)
     {

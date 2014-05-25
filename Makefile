@@ -3,9 +3,9 @@ LDFLAGS += -ljack -lsndfile -lm -lstdc++ `pkg-config --libs glib-2.0 gtk+-3.0`
 
 all: opijack brainwave
 
-brainwave: brainwave.o opi_linux.o
+brainwave: brainwave.o opi_linux.o sensor.o
 
-opijack: main.o opi_linux.o jack_client.o
+opijack: main.o opi_linux.o jack_client.o sensor.o
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
 .PHONY: clean
