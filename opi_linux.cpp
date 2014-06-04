@@ -21,6 +21,7 @@
   * ****************************/
 
 #include "opi_linux.h"
+#include <errno.h>
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -208,7 +209,10 @@ int opi_openucd_com(int *comportptr)
         *comportptr=open(comName, O_RDWR | O_NDELAY);
         if(*comportptr < 0)
         {
-            printf("Couldn't open port %s", comName);
+            char buf[1024];
+            buf[0] = '\0';
+            int en = errno;
+            printf("Couldn't open port %s: %s (%d)\n", comName, strerror_r(en, buf, 1024), en);
             opi_closeucd_com(comportptr);
             continue;
         }

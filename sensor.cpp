@@ -6,23 +6,23 @@
 // Most code here is by Bernhard Tittelbach, I just refactored it so that it
 // is easier to use it in GUIs etc.
 
-int init_openucd_and_module(HANDLE &comprt)
+SensorError init_openucd_and_module(HANDLE &comprt)
 {
     OPIPKT_t onepkt;
-    int rc = opi_openucd_com(&comprt);;
+    int rc = opi_openucd_com(&comprt);
     if (rc != 0)
     {
         fprintf(stderr, "could not find ucd device\n");
         return ERR_NODEVICE;
     }
     if (opiucd_onmode(&comprt) != 0)
-        return 1;
+        return ERR_NODEVICE;
     rc = opiucd_status(&comprt, &onepkt);
     if (rc == 0)
         opipkt_dump(&onepkt);
     else
         return ERR_INITSTATUS;
-    return 0;
+    return ERR_OK;
 }
 
 // ugly code for beautiful art :-)
@@ -85,7 +85,7 @@ const char *get_sensor_error_string(SensorError error)
     }
 }
 
-int configure_sensor(HANDLE &comprt)
+SensorError configure_sensor(HANDLE &comprt)
 {
     OPIPKT_t onepkt;
     int rc = opiucd_tsstatus(&comprt, &onepkt);
@@ -109,7 +109,7 @@ int configure_sensor(HANDLE &comprt)
         return ERR_MMWRITE;
     if (opiucd_copytssettings(&comprt, 0) != 0) // copy settings to slot 0
         return ERR_COPYSETTINGS;
-    return 0;
+    return ERR_OK;
 }
 
 /**

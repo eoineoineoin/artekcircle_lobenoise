@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 enum SensorError {
+    ERR_OK = 0,
     ERR_NODEVICE = 1,
     ERR_INITSTATUS = 2,
     ERR_NOSENSOR = 3,
@@ -30,7 +31,7 @@ struct SensorDataPacket
 };
 
 const char *get_sensor_error_string(SensorError error);
-int configure_sensor(HANDLE &comprt);
-int init_openucd_and_module(HANDLE &comprt);
+SensorError configure_sensor(HANDLE &comprt);
+SensorError init_openucd_and_module(HANDLE &comprt);
 bool data_packet_to_sdp(OPIPKT_t &opipkt, SensorDataPacket &sdp);
 void interpret_data_packet(OPIPKT_t &opipkt);

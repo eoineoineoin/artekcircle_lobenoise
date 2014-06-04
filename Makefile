@@ -1,9 +1,9 @@
-CXXFLAGS += -I. `pkg-config --cflags glib-2.0 gtk+-3.0`
-LDFLAGS += -ljack -lsndfile -lm -lstdc++ `pkg-config --libs glib-2.0 gtk+-3.0`
+CXXFLAGS += -I. `pkg-config --cflags glib-2.0 gtk+-3.0` -DGNU_SOURCE
+LDFLAGS += -ljack -lsndfile -lm -lstdc++ `pkg-config --libs glib-2.0 gtk+-3.0` -lpthread
 
 all: opijack brainwave
 
-brainwave: brainwave.o opi_linux.o sensor.o
+brainwave: brainwave.o opi_linux.o sensor.o fsm.o
 
 opijack: main.o opi_linux.o jack_client.o sensor.o
 	$(CXX) $^ -o $@ $(LDFLAGS)

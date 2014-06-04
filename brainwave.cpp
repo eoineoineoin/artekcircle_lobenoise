@@ -10,6 +10,7 @@
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 #include "fft.h"
+#include "fsm.h"
 
 using namespace std;
 
@@ -275,10 +276,14 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     cairo_stroke (cr);    
 }
 
+SensorStateThread sensor_thread;
+GtkWidget *status_widget;
+
 gboolean my_idle_func(gpointer user_data)
 {
     GtkWidget *w = (GtkWidget *)user_data;
     gtk_widget_queue_draw(w);
+    gtk_label_set_text(GTK_LABEL(status_widget), sensor_thread.get_status_text().c_str());
     return TRUE;
 }
 
@@ -311,13 +316,20 @@ int main(int argc, char *argv[])
         }
     }
     
+    sensor_thread.start();
     gtk_init(&argc, &argv);
     GtkWidget *win = GTK_WIDGET(gtk_window_new(GTK_WINDOW_TOPLEVEL));
+    GtkWidget *vbox = gtk_vbox_new(FALSE, 0);
     GtkWidget *dra = gtk_drawing_area_new();
+    status_widget = gtk_label_new("Status");
     gtk_widget_set_size_request(dra, 512, 128);
-    gtk_container_add(GTK_CONTAINER(win), dra);
-    gtk_widget_show(win);
+    gtk_box_pack_start(GTK_BOX(vbox), status_widget, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox), dra, TRUE, TRUE, 0);
+    gtk_container_add(GTK_CONTAINER(win), vbox);
     gtk_widget_show(dra);
+    gtk_widget_show(status_widget);
+    gtk_widget_show(vbox);
+    gtk_widget_show(win);
     g_signal_connect(G_OBJECT(win), "delete-event", G_CALLBACK(gtk_false), NULL);
     g_signal_connect(G_OBJECT(win), "destroy", G_CALLBACK(gtk_main_quit), NULL);
     g_signal_connect(G_OBJECT(dra), "draw", G_CALLBACK(draw), NULL);
@@ -333,6 +345,7 @@ int main(int argc, char *argv[])
     jack_connect(client, "brainwaves:output", "system:playback_2");
     g_idle_add(my_idle_func, dra);
     gtk_main();
+    sensor_thread.stop();
     jack_port_unregister(client, port);
     jack_client_close(client);
     
