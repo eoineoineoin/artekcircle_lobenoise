@@ -57,26 +57,36 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     width = gtk_widget_get_allocated_width (dra);
     height = gtk_widget_get_allocated_height (dra);
 
+
     for (int i = 0; i < width; i++)
     {
         int pt = i * 100 / (width - 1);
+        const char *colorspec = "rgba(0,0.5,1.0,0.5)";
+
+        // theta
+        if (pt >= 1 && pt <= 3)
+            colorspec = "grey";
+        // theta
+        if (pt >= 4 && pt <= 7)
+            colorspec = "blue";
+        // alpha
+        if (pt >= 8 && pt <= 15)
+            colorspec = "green";
+        // beta
+        if (pt >= 16 && pt <= 31)
+            colorspec = "orange";
+        // 50 Hz or 60 Hz ground hum
+        if ((pt >= 49 && pt <= 51) || (pt >= 59 && pt <= 61))
+            colorspec = "red";
+        gdk_rgba_parse(&color, colorspec);
+        gdk_cairo_set_source_rgba (cr, &color);
+
         float ptv = log10(abs(output[pt]) + 0.00000000001) / 2;
         float pty = height * (1 - ptv);
-        if (i == 0)
-            cairo_move_to(cr, i, pty);
-        else
-            cairo_line_to(cr, i, pty);
+        cairo_move_to(cr, i, height);
+        cairo_line_to(cr, i, pty);
+        cairo_stroke(cr);
     }
-    cairo_line_to(cr, width, height);
-    cairo_line_to(cr, 0, height);
-
-    color.red = 0.0;
-    color.green = 255.0;
-    color.blue = 127.0;
-    color.alpha = 1.0;
-    gdk_cairo_set_source_rgba (cr, &color);
-
-    cairo_fill (cr);    
 
     for (int i = 0; i < 512; i++)
     {
@@ -99,6 +109,23 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     gdk_cairo_set_source_rgba (cr, &color);
 
     cairo_stroke (cr);    
+
+    color.red = 1.0;
+    color.green = 1.0;
+    color.blue = 1.0;
+
+    for (int i = 0; i < 100; i += 5)
+    {
+        int x = i * (width - 1) / 100;
+        if (i % 10 == 5)
+            color.alpha = 0.25;
+        else
+            color.alpha = 0.5;
+        gdk_cairo_set_source_rgba (cr, &color);
+        cairo_move_to(cr, x, 0);
+        cairo_line_to(cr, x, height);
+        cairo_stroke(cr);
+    }
 }
 
 GtkWidget *status_widget;
