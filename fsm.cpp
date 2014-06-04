@@ -94,9 +94,14 @@ void SensorStateThread::do_receiving()
     OPIPKT_t pkt;
     int rc = opiucd_getwltsdata(&handle, &pkt);
     if (rc == 1)
-        interpret_data_packet(pkt);
+    {
+        SensorDataPacket sdp;
+        if (data_packet_to_sdp(pkt, sdp))
+            process_data(pkt, sdp);
+        // interpret_data_packet(pkt);
+    }
     else
-        usleep(10000);
+        usleep(1000);
 }
 
 void SensorStateThread::do_notfound()

@@ -173,7 +173,6 @@ bool data_packet_to_sdp(OPIPKT_t &opipkt, SensorDataPacket &sdp)
     pb += 6;
     sdp.frame_pdn = opipkt.payload[pb++];
     sdp.flags = opipkt.payload[pb++];
-    printf("ADC Samples Data Len: %d\n", opipkt.length - 17);
     unsigned int adcc;
     for (adcc = 0; adcc < (opipkt.length - 17) / 2; adcc++)
         sdp.data[adcc] = (((int16_t) opipkt.payload[pb++]) << 8) + (((int16_t) opipkt.payload[pb++] & 0xFC));
