@@ -110,6 +110,7 @@ void SensorStateThread::do_receiving()
     int rc = opiucd_getwltsdata(&handle, &pkt);
     if (rc == 1)
     {
+        last_signal = time(NULL);
         SensorDataPacket sdp;
         if (data_packet_to_sdp(pkt, sdp))
             process_data(pkt, sdp);
