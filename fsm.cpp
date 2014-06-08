@@ -162,6 +162,11 @@ void SensorStateThread::start()
 
 void SensorStateThread::stop()
 {
+    if (handle)
+    {
+        opiucd_turnmodoff(&handle);
+        opiucd_offmode(&handle);
+    }
     stopping = true;
     pthread_join(thread, NULL);
 }

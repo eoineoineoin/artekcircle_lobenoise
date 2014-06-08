@@ -245,7 +245,7 @@ int opi_openucd_com(int *comportptr)
         tempui8 = SYNCBYTE;
         if(write(*comportptr, &tempui8, 1) < 0)
         {
-            printf("Couldn't put 1st sync byte");
+            printf("Couldn't put 1st sync byte\n");
             opi_closeucd_com(comportptr);
             continue;
         }
