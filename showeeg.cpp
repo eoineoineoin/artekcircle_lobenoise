@@ -27,6 +27,18 @@ SensorStateProcessor sensor_thread;
 
 void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPacket &sdp)
 {
+    // Sometimes packets arrive with all zeros in the ADC fields, discard those 
+    bool has_data = false;
+    for (int i = 0; i < sdp.data_count; i++)
+    {
+        if (sdp.data[i])
+        {
+            has_data = true;
+            break;
+        }
+    }
+    if (!has_data)
+        return;
     for (int i = 0; i < sdp.data_count; i++)
     {
         data[data_ptr] = sdp.data[i] / 16383.0;
@@ -36,7 +48,8 @@ void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPac
 
 void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
 {
-    if (sensor_thread.get_state() != SST_RECEIVING)
+    SensorState ss = sensor_thread.get_state();
+    if (ss != SST_RECEIVING && ss != SST_WAITING_FOR_DATA)
         return;
     guint width, height;
     GdkRGBA color;

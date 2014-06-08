@@ -23,6 +23,7 @@ protected:
     volatile bool stopping;
     HANDLE handle;
     SensorError last_error;
+    time_t last_signal;
     void *run();
     static void *run_func(void *pThread) { return ((SensorStateThread *)pThread)->run(); }
 

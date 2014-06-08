@@ -66,6 +66,14 @@ void SensorStateThread::do_waitingfordata()
     if (rc == 1)
     {
         state = SST_RECEIVING;
+        last_signal = time(NULL);
+        return;
+    }
+    // Check if controller is still connected
+    rc = opiucd_status(&handle, &pkt);
+    if (rc < 0)
+    {
+        state = SST_INITIALISING;
         return;
     }
     usleep(10000);
@@ -78,12 +86,19 @@ void SensorStateThread::do_waitingforsensor()
     if (rc == 1)
     {
         state = SST_RECEIVING;
+        last_signal = time(NULL);
         return;
     }
     rc = opiucd_tsstatus(&handle, &pkt);
     if (rc == 0)
     {
         state = SST_CONFIGURING;
+        return;
+    }
+    rc = opiucd_status(&handle, &pkt);
+    if (rc < 0)
+    {
+        state = SST_INITIALISING;
         return;
     }
     usleep(10000);
@@ -101,7 +116,14 @@ void SensorStateThread::do_receiving()
         // interpret_data_packet(pkt);
     }
     else
+    {
         usleep(1000);
+        if (time(NULL) - last_signal > 3)
+        {
+            state = SST_WAITING_FOR_DATA;
+            return;
+        }
+    }
 }
 
 void SensorStateThread::do_notfound()
