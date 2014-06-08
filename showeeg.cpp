@@ -76,7 +76,7 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     for (int i = 0; i < width; i++)
     {
         int pt = i * 100 / (width - 1);
-        const char *colorspec = "rgba(0,0.5,1.0,0.5)";
+        const char *colorspec = "rgba(0,63,127,0.5)";
 
         // theta
         if (pt >= 1 && pt <= 3)
