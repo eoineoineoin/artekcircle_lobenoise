@@ -15,6 +15,8 @@ SensorError init_openucd_and_module(HANDLE &comprt)
         fprintf(stderr, "could not find ucd device\n");
         return ERR_NODEVICE;
     }
+    if (opiucd_turnmodon(&comprt) != 0)
+        return ERR_NODEVICE;
     if (opiucd_onmode(&comprt) != 0)
         return ERR_NODEVICE;
     rc = opiucd_status(&comprt, &onepkt);
