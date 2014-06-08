@@ -17,8 +17,6 @@ SensorError init_openucd_and_module(HANDLE &comprt)
     }
     if (opiucd_turnmodon(&comprt) != 0)
         return ERR_NODEVICE;
-    if (opiucd_onmode(&comprt) != 0)
-        return ERR_NODEVICE;
     rc = opiucd_status(&comprt, &onepkt);
     if (rc == 0)
         opipkt_dump(&onepkt);
@@ -90,6 +88,8 @@ const char *get_sensor_error_string(SensorError error)
 SensorError configure_sensor(HANDLE &comprt)
 {
     OPIPKT_t onepkt;
+    if (opiucd_onmode(&comprt) != 0)
+        return ERR_NOSENSOR;
     int rc = opiucd_tsstatus(&comprt, &onepkt);
     if (rc == 0)
     {
