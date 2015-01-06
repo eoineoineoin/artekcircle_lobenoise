@@ -9,6 +9,7 @@
 #include <opi_linux.h>
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
+#include <netinet/ip.h>
 #include "fft.h"
 #include "fsm.h"
 
@@ -17,6 +18,8 @@ using namespace std;
 float data[512];
 int data_ptr = 0;
 GtkAdjustment *gain_adjustment;
+int sock;
+sockaddr_in send_addr;
 
 class SensorStateProcessor: public SensorStateThread
 {
@@ -25,6 +28,12 @@ public:
 };
 
 SensorStateProcessor sensor_thread;
+
+void sendblob(const void *blob, uint16_t len)
+{
+    if (sendto(sock, blob, len, 0, (sockaddr *)&send_addr, sizeof(send_addr)) != len)
+        perror("sendto");
+}
 
 void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPacket &sdp)
 {
@@ -45,6 +54,7 @@ void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPac
         data[data_ptr] = sdp.data[i] / 16383.0;
         data_ptr = (data_ptr + 1) & 511;
     }
+    sendblob(sdp.data, sdp.data_count * sizeof(sdp.data[0]));
 }
 
 void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
@@ -156,6 +166,22 @@ gboolean my_idle_func(gpointer user_data)
 
 int main(int argc, char *argv[])
 {
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0)
+        perror("socket");
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = 0;
+    addr.sin_addr.s_addr = 0;
+    int reuse = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    if (bind(sock, (sockaddr *)&addr, sizeof(addr)))
+        perror("bind");
+
+    send_addr.sin_family = AF_INET;
+    send_addr.sin_port = ntohs(9999);
+    send_addr.sin_addr.s_addr = 0;
+
     sensor_thread.start();
     gtk_init(&argc, &argv);
     GtkWidget *win = GTK_WIDGET(gtk_window_new(GTK_WINDOW_TOPLEVEL));
