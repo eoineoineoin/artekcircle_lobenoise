@@ -39,7 +39,9 @@ void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPac
 {
     // Sometimes packets arrive with all zeros in the ADC fields, discard those 
     bool has_data = false;
-    for (int i = 0; i < sdp.data_count; i++)
+    // 
+    int first_valid_sample = 3;
+    for (int i = first_valid_sample; i < sdp.data_count; i++)
     {
         if (sdp.data[i])
         {
@@ -47,10 +49,12 @@ void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPac
             break;
         }
     }
+    printf("\n");
     if (!has_data)
         return;
-    for (int i = 0; i < sdp.data_count; i++)
+    for (int i = first_valid_sample; i < sdp.data_count; i++)
     {
+        printf("%d, ", sdp.data[i]);
         data[data_ptr] = sdp.data[i] / 16383.0;
         data_ptr = (data_ptr + 1) & 511;
     }
@@ -78,6 +82,18 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     }
     avg /= 512;
     fourier.calculate(input, output, false);
+
+    // Determine the relative signal level in 'good' and 'bad' bands, scale
+    // them to size of those bands
+    float good = 0, bad = 0;
+    int threshold = 30;
+    for (int i = 1; i < 100; ++i)
+    {
+        if (i < threshold)
+            good += abs(output[i]) / (threshold - 1);
+        else
+            bad += abs(output[i]) / (99 - threshold);
+    }
     
     width = gtk_widget_get_allocated_width (dra);
     height = gtk_widget_get_allocated_height (dra);
@@ -127,8 +143,9 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     //gtk_style_context_get_color (gtk_widget_get_style_context (dra),
     //                           (GtkStateFlags)0,
     //                           &color);
-    color.red = 0.0;
-    color.green = 1.0;
+    bool is_good = good > 4 * bad && good >= gain / 4 && bad < 2 * gain;
+    color.red = is_good ? 0.0 : 1.0;
+    color.green = is_good ? 1.0 : 0.0;
     color.blue = 0.0;
     color.alpha = 1.0;
     gdk_cairo_set_source_rgba (cr, &color);
