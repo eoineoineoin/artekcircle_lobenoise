@@ -274,7 +274,10 @@ int main(int argc, char *argv[])
     g_signal_connect(G_OBJECT(dra), "draw", G_CALLBACK(draw), NULL);
     
     g_idle_add(my_idle_func, dra);
-    gtk_main();
+    {
+        AudioOutput ao;
+        gtk_main();
+    }
     sensor_thread.stop();
     
     return 0;
