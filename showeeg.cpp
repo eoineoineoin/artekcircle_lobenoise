@@ -253,11 +253,11 @@ int main(int argc, char *argv[])
     sensor_thread.start();
     gtk_init(&argc, &argv);
     GtkWidget *win = GTK_WIDGET(gtk_window_new(GTK_WINDOW_TOPLEVEL));
-    GtkWidget *vbox = gtk_vbox_new(FALSE, 0);
-    GtkWidget *hbox = gtk_hbox_new(FALSE, 0);
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     GtkWidget *dra = gtk_drawing_area_new();
     gain_adjustment = gtk_adjustment_new(0, -36, 36, 1, 6, 6);
-    GtkWidget *slider = gtk_hscale_new(gain_adjustment);
+    GtkWidget *slider = gtk_scale_new(GTK_ORIENTATION_HORIZONTAL, gain_adjustment);
     status_widget = gtk_label_new("Status");
     gtk_widget_set_size_request(dra, 1024, 512);
     gtk_box_pack_start(GTK_BOX(hbox), gtk_label_new("Gain [dB]"), FALSE, FALSE, 0);
@@ -266,8 +266,8 @@ int main(int argc, char *argv[])
     gtk_box_pack_start(GTK_BOX(vbox), hbox, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(vbox), dra, TRUE, TRUE, 0);
     gtk_container_add(GTK_CONTAINER(win), vbox);
-    GdkColor black = {0, 0, 0, 0};
-    gtk_widget_modify_bg(dra, GTK_STATE_NORMAL, &black);
+    GdkRGBA black = {0, 0, 0, 1};
+    gtk_widget_override_background_color(dra, GTK_STATE_FLAG_NORMAL, &black);
     gtk_widget_show_all(win);
     g_signal_connect(G_OBJECT(win), "delete-event", G_CALLBACK(gtk_false), NULL);
     g_signal_connect(G_OBJECT(win), "destroy", G_CALLBACK(gtk_main_quit), NULL);
