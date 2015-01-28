@@ -13,6 +13,57 @@
 #include "fft.h"
 #include "fsm.h"
 
+class AudioOutput
+{
+protected:
+    jack_client_t *client;
+    jack_port_t *port;
+public:
+    AudioOutput();
+    bool is_ok() const { return client != NULL; }
+    static int process(unsigned size, void *arg);
+    ~AudioOutput();
+};
+
+int AudioOutput::process(unsigned size, void *arg)
+{
+    AudioOutput *self = (AudioOutput *)arg;
+    float *outdata = (float *)jack_port_get_buffer(self->port, size);
+    for (unsigned i = 0; i < size; ++i)
+    {
+        outdata[i] = 0.f;
+    }
+    return 0;
+}
+
+AudioOutput::AudioOutput()
+{
+    client = NULL;
+    
+    jack_status_t status;
+    jack_client_t *tmp_client = jack_client_open("brainwaves", (jack_options_t)0, &status);
+    if (tmp_client)
+    {
+        port = jack_port_register(tmp_client, "output", JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
+        if (port)
+        {
+            jack_set_process_callback(tmp_client, AudioOutput::process, this);
+            jack_activate(tmp_client);
+            jack_connect(tmp_client, "brainwaves:output", "system:playback_1");
+            jack_connect(tmp_client, "brainwaves:output", "system:playback_2");
+            client = tmp_client;
+        }
+        else
+            jack_client_close(tmp_client);
+    }
+}
+
+AudioOutput::~AudioOutput()
+{
+    if (client)
+        jack_client_close(client);
+}
+
 using namespace std;
 
 float data[512];
