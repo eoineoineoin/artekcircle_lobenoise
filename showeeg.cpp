@@ -21,6 +21,7 @@ struct Grain
     vector<float> data;
     bool play;
     int readpos;
+    int delay;
     
     Grain();
 };
@@ -29,6 +30,7 @@ Grain::Grain()
 {
     play = false;
     readpos = 0;
+    delay = 0;
 }
 
 class AudioOutput
@@ -42,7 +44,7 @@ public:
     bool is_ok() const { return client != NULL; }
     void mix(float *buffer, unsigned nsamples);
     static int process(unsigned size, void *arg);
-    Grain *get_grain_to_fill();
+    Grain *get_grain_to_fill(int overlap, int &maxdelay);
     ~AudioOutput();
 };
 
@@ -50,7 +52,7 @@ AudioOutput::AudioOutput()
 {
     client = NULL;
     
-    grains.resize(10);
+    grains.resize(40);
     
     jack_status_t status;
     jack_client_t *tmp_client = jack_client_open("brainwaves", (jack_options_t)0, &status);
@@ -70,8 +72,15 @@ AudioOutput::AudioOutput()
     }
 }
 
-Grain *AudioOutput::get_grain_to_fill()
+Grain *AudioOutput::get_grain_to_fill(int overlap, int &maxdelay)
 {
+    maxdelay = 0;
+    for(size_t i = 0; i < grains.size(); ++i)
+    {
+        int end = grains[i].delay + grains[i].data.size() - overlap;
+        if (end > maxdelay)
+            maxdelay = end;
+    }
     for(size_t i = 0; i < grains.size(); ++i)
     {
         if (!grains[i].play)
@@ -87,10 +96,16 @@ void AudioOutput::mix(float *buffer, unsigned nsamples)
         Grain &grain = grains[g];
         if (!grain.play)
             continue;
-        for (unsigned i = 0; i < nsamples && grain.readpos < grain.data.size(); ++i)
+        if (grain.delay >= nsamples)
+        {
+            grain.delay -= nsamples;
+            continue;
+        }
+        for (unsigned i = grain.delay; i < nsamples && grain.readpos < grain.data.size(); ++i)
         {
             buffer[i] += grain.data[grain.readpos++];
         }
+        grain.delay = 0;
         if (grain.readpos >= grain.data.size())
             grain.play = false;
     }
@@ -174,28 +189,38 @@ void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPac
     
     sendblob(sdp.data, sdp.data_count * sizeof(sdp.data[0]));
     
-    Grain *g = aout->get_grain_to_fill();
-    if (g)
+    int frames = (sdp.data_count - first_valid_sample);
+    int delay = 0;
+    for (int ng = 0; ng < 10; ng++)
     {
-        g->data.clear();
-        int repeat = 20;
-        int stretch = 10;
-        int frames = (sdp.data_count - first_valid_sample);
-        int grainlen = frames * stretch * repeat;
-        g->data.resize(grainlen);
-        for (int i = 0; i < grainlen; ++i)
+        Grain *g = aout->get_grain_to_fill(frames / 2, delay);
+        if (g)
         {
-            float gain = 1.0;
-            if (i < 200 && i < grainlen / 2)
-                gain = i / 200.0;
-            else if (i >= grainlen - 200)
-                gain = (grainlen - i) / 200.0;
-            int s1 = sdp.data[(i / stretch) % frames];
-            int s2 = sdp.data[(i / stretch + 1) % frames];
-            g->data[i] = (s1 + float(s2 - s1) * (i % stretch) / stretch) * gain * gain / 16383.0;
+            g->data.clear();
+            int repeat = 1;
+            int stretch = (44100 / 512) / 4;
+            int grainlen = frames * stretch * repeat;
+            g->data.resize(grainlen);
+            float envlen = 200.0;
+            for (int i = 0; i < grainlen; ++i)
+            {
+                float gain = 1.0;
+                if (i < envlen && i < grainlen / 2)
+                    gain = i / envlen;
+                else if (i >= grainlen - envlen)
+                    gain = (grainlen - i) / envlen;
+                int s1 = sdp.data[(i / stretch) % frames];
+                int s2 = sdp.data[(i / stretch + 1) % frames];
+                g->data[i] = (s1 + float(s2 - s1) * (i % stretch) / stretch) * gain * gain / 16383.0;
+            }
+            g->delay = delay;
+            g->readpos = 0;
+            g->play = true;
+            if (delay > 44100 / 4)
+                break;
         }
-        g->readpos = 0;
-        g->play = true;
+        else
+            break;
     }
 }
 
