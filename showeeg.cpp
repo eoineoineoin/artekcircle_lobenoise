@@ -10,35 +10,47 @@
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 #include <netinet/ip.h>
+#include <vector>
 #include "fft.h"
 #include "fsm.h"
+
+using namespace std;
+
+struct Grain
+{
+    vector<float> data;
+    bool play;
+    int readpos;
+    
+    Grain();
+};
+
+Grain::Grain()
+{
+    play = false;
+    readpos = 0;
+}
 
 class AudioOutput
 {
 protected:
     jack_client_t *client;
     jack_port_t *port;
+    vector<Grain> grains;
 public:
     AudioOutput();
     bool is_ok() const { return client != NULL; }
+    void mix(float *buffer, unsigned nsamples);
     static int process(unsigned size, void *arg);
+    Grain *get_grain_to_fill();
     ~AudioOutput();
 };
-
-int AudioOutput::process(unsigned size, void *arg)
-{
-    AudioOutput *self = (AudioOutput *)arg;
-    float *outdata = (float *)jack_port_get_buffer(self->port, size);
-    for (unsigned i = 0; i < size; ++i)
-    {
-        outdata[i] = 0.f;
-    }
-    return 0;
-}
 
 AudioOutput::AudioOutput()
 {
     client = NULL;
+    
+    grains.resize(10);
     
     jack_status_t status;
     jack_client_t *tmp_client = jack_client_open("brainwaves", (jack_options_t)0, &status);
@@ -58,6 +70,44 @@ AudioOutput::AudioOutput()
     }
 }
 
+Grain *AudioOutput::get_grain_to_fill()
+{
+    for(size_t i = 0; i < grains.size(); ++i)
+    {
+        if (!grains[i].play)
+            return &grains[i];
+    }
+    return NULL;
+}
+
+void AudioOutput::mix(float *buffer, unsigned nsamples)
+{
+    for (unsigned g = 0; g < grains.size(); ++g)
+    {
+        Grain &grain = grains[g];
+        if (!grain.play)
+            continue;
+        for (unsigned i = 0; i < nsamples && grain.readpos < grain.data.size(); ++i)
+        {
+            buffer[i] += grain.data[grain.readpos++];
+        }
+        if (grain.readpos >= grain.data.size())
+            grain.play = false;
+    }
+}
+
+int AudioOutput::process(unsigned size, void *arg)
+{
+    AudioOutput *self = (AudioOutput *)arg;
+    float *outdata = (float *)jack_port_get_buffer(self->port, size);
+    for (unsigned i = 0; i < size; ++i)
+    {
+        outdata[i] = 0.f;
+    }
+    self->mix(outdata, size);
+    return 0;
+}
+
 AudioOutput::~AudioOutput()
 {
     if (client)
@@ -75,12 +125,23 @@ sockaddr_in send_addr;
 class SensorStateProcessor: public SensorStateThread
 {
 public:
+    AudioOutput *aout;
+    GtkWidget *status_widget, *waveform_widget;
+
+    SensorStateProcessor(AudioOutput *_aout, GtkWidget *status, GtkWidget *waveform);
     virtual void process_data(const OPIPKT_t &pkt, const SensorDataPacket &sdp);
+
+    void sendblob(const void *blob, uint16_t len);
 };
 
-SensorStateProcessor sensor_thread;
+SensorStateProcessor::SensorStateProcessor(AudioOutput *_aout, GtkWidget *s, GtkWidget *w)
+{
+    aout = _aout;
+    status_widget = s;
+    waveform_widget = w;
+}
 
-void sendblob(const void *blob, uint16_t len)
+void SensorStateProcessor::sendblob(const void *blob, uint16_t len)
 {
     if (sendto(sock, blob, len, 0, (sockaddr *)&send_addr, sizeof(send_addr)) != len)
         perror("sendto");
@@ -91,7 +152,8 @@ void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPac
     // Sometimes packets arrive with all zeros in the ADC fields, discard those 
     bool has_data = false;
     // 
-    int first_valid_sample = 3;
+    int first_valid_sample = 0;
+    printf("Data count %d: ", (int)sdp.data_count);
     for (int i = first_valid_sample; i < sdp.data_count; i++)
     {
         if (sdp.data[i])
@@ -109,12 +171,38 @@ void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPac
         data[data_ptr] = sdp.data[i] / 16383.0;
         data_ptr = (data_ptr + 1) & 511;
     }
+    
     sendblob(sdp.data, sdp.data_count * sizeof(sdp.data[0]));
+    
+    Grain *g = aout->get_grain_to_fill();
+    if (g)
+    {
+        g->data.clear();
+        int repeat = 20;
+        int stretch = 10;
+        int frames = (sdp.data_count - first_valid_sample);
+        int grainlen = frames * stretch * repeat;
+        g->data.resize(grainlen);
+        for (int i = 0; i < grainlen; ++i)
+        {
+            float gain = 1.0;
+            if (i < 200 && i < grainlen / 2)
+                gain = i / 200.0;
+            else if (i >= grainlen - 200)
+                gain = (grainlen - i) / 200.0;
+            int s1 = sdp.data[(i / stretch) % frames];
+            int s2 = sdp.data[(i / stretch + 1) % frames];
+            g->data[i] = (s1 + float(s2 - s1) * (i % stretch) / stretch) * gain * gain / 16383.0;
+        }
+        g->readpos = 0;
+        g->play = true;
+    }
 }
 
 void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
 {
-    SensorState ss = sensor_thread.get_state();
+    SensorStateProcessor *ssp = (SensorStateProcessor *)user_data;
+    SensorState ss = ssp->get_state();
     if (ss != SST_RECEIVING && ss != SST_WAITING_FOR_DATA)
         return;
     guint width, height;
@@ -221,13 +309,11 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     }
 }
 
-GtkWidget *status_widget;
-
 gboolean my_idle_func(gpointer user_data)
 {
-    GtkWidget *w = (GtkWidget *)user_data;
-    gtk_widget_queue_draw(w);
-    gtk_label_set_text(GTK_LABEL(status_widget), sensor_thread.get_status_text().c_str());
+    SensorStateProcessor *ssp = (SensorStateProcessor *)user_data;
+    gtk_widget_queue_draw(ssp->waveform_widget);
+    gtk_label_set_text(GTK_LABEL(ssp->status_widget), ssp->get_status_text().c_str());
     return TRUE;
 }
 
@@ -250,7 +336,6 @@ int main(int argc, char *argv[])
     send_addr.sin_port = ntohs(9999);
     send_addr.sin_addr.s_addr = 0;
 
-    sensor_thread.start();
     gtk_init(&argc, &argv);
     GtkWidget *win = GTK_WIDGET(gtk_window_new(GTK_WINDOW_TOPLEVEL));
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -258,7 +343,7 @@ int main(int argc, char *argv[])
     GtkWidget *dra = gtk_drawing_area_new();
     gain_adjustment = gtk_adjustment_new(0, -36, 36, 1, 6, 6);
     GtkWidget *slider = gtk_scale_new(GTK_ORIENTATION_HORIZONTAL, gain_adjustment);
-    status_widget = gtk_label_new("Status");
+    GtkWidget *status_widget = gtk_label_new("Status");
     gtk_widget_set_size_request(dra, 1024, 512);
     gtk_box_pack_start(GTK_BOX(hbox), gtk_label_new("Gain [dB]"), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(hbox), slider, TRUE, TRUE, 0);
@@ -271,14 +356,17 @@ int main(int argc, char *argv[])
     gtk_widget_show_all(win);
     g_signal_connect(G_OBJECT(win), "delete-event", G_CALLBACK(gtk_false), NULL);
     g_signal_connect(G_OBJECT(win), "destroy", G_CALLBACK(gtk_main_quit), NULL);
-    g_signal_connect(G_OBJECT(dra), "draw", G_CALLBACK(draw), NULL);
     
-    g_idle_add(my_idle_func, dra);
     {
         AudioOutput ao;
+        SensorStateProcessor sensor_thread(&ao, status_widget, dra);
+        g_signal_connect(G_OBJECT(dra), "draw", G_CALLBACK(draw), &sensor_thread);
+        g_idle_add(my_idle_func, &sensor_thread);
+
+        sensor_thread.start();
         gtk_main();
+        sensor_thread.stop();
     }
-    sensor_thread.stop();
     
     return 0;
 }
