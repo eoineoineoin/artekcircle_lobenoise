@@ -30,8 +30,15 @@ struct SensorDataPacket
     bool isBatteryOK() const { return 0 != (flags & 0x01); }
 };
 
+struct SensorConfig
+{
+    int zbchannel;
+};
+
+extern SensorConfig sensor_config;
 const char *get_sensor_error_string(SensorError error);
 SensorError configure_sensor(HANDLE &comprt);
 SensorError init_openucd_and_module(HANDLE &comprt);
 bool data_packet_to_sdp(OPIPKT_t &opipkt, SensorDataPacket &sdp);
 void interpret_data_packet(OPIPKT_t &opipkt);
+void load_sensor_config();

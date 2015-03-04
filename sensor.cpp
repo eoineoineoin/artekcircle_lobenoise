@@ -1,7 +1,27 @@
 #include "sensor.h"
 #include <arpa/inet.h>
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
+#include <glib.h>
+
+SensorConfig sensor_config;
+
+void load_sensor_config()
+{
+    sensor_config.zbchannel = 13;
+
+    GError *error = NULL;
+    GKeyFile *kf = g_key_file_new();
+    char *ininame = g_build_filename(g_get_home_dir(), ".showeegrc", NULL);
+    printf("Reading config from %s\n", ininame);
+    if (!g_key_file_load_from_file(kf, ininame, G_KEY_FILE_NONE, &error))
+        fprintf(stderr, "Warning: no sensor configuration file, assuming defaults channel = %d.\n", sensor_config.zbchannel);
+    if (g_key_file_has_key(kf, "sensor", "channel", NULL))
+        sensor_config.zbchannel = g_key_file_get_integer(kf, "sensor", "channel", NULL);
+    g_key_file_free(kf);
+    printf("Note: ZigBee channel = %d\n", sensor_config.zbchannel);
+}
 
 // Most code here is by Bernhard Tittelbach, I just refactored it so that it
 // is easier to use it in GUIs etc.
@@ -101,9 +121,9 @@ SensorError configure_sensor(HANDLE &comprt)
         fprintf(stderr,"Plug in Sensor pls.\n");
         return ERR_NOSENSOR;
     }
-    if (opiucd_settszbchan(&comprt, 13) != 0)
+    if (opiucd_settszbchan(&comprt, sensor_config.zbchannel) != 0)
         return ERR_SENSORZBCONF;
-    if (opiucd_setzbchan(&comprt, 13) != 0)
+    if (opiucd_setzbchan(&comprt, sensor_config.zbchannel) != 0)
         return ERR_CTRLZBCONF;
     if (opiucd_settsrfmode(&comprt, 0x01) != 0) // 0x01 - RF on and double tap&timeout off
         return ERR_RFMODE;

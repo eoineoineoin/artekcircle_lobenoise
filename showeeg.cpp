@@ -345,6 +345,7 @@ gboolean my_idle_func(gpointer user_data)
 
 int main(int argc, char *argv[])
 {
+    load_sensor_config();
     sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0)
         perror("socket");
