@@ -36,11 +36,12 @@ protected:
 public:
     SensorStateThread();
     void start();
-    void stop();
+    virtual void stop();
     SensorState get_state() const { return state; }
     int get_last_error() const { return last_error; }
     std::string get_status_text() const;
     virtual void process_data(const OPIPKT_t &pkt, const SensorDataPacket &sdp) {}
+    virtual ~SensorStateThread() {}
 };
 
 #endif

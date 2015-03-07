@@ -19,6 +19,8 @@ SensorStateProcessor::SensorStateProcessor()
     send_addr.sin_addr.s_addr = 0;
     is_recording = false;
     recording_fd = -1;
+    rec_frames = 0;
+
     pthread_mutex_init(&sensor_mutex, NULL);
     
     open_socket();
@@ -75,6 +77,7 @@ void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPac
         }
         line << endl;
         write_string_to_recording(line.str());
+        rec_frames++;
     }
     pthread_mutex_unlock(&sensor_mutex);
     // Sometimes packets arrive with all zeros in the ADC fields, discard those 
@@ -167,6 +170,7 @@ void SensorStateProcessor::open_socket()
 void SensorStateProcessor::start_recording(const char *label)
 {
     assert(!is_recording);
+    assert(label);
     pthread_mutex_lock(&sensor_mutex);
     recording_fd = open("brainwave-recordings", O_APPEND | O_CREAT | O_WRONLY, 0660);
     if (recording_fd < 0)
@@ -178,6 +182,8 @@ void SensorStateProcessor::start_recording(const char *label)
         stringstream ss;
         ss << "#" << time(NULL) << " " << label << endl;
         write_string_to_recording(ss.str());
+        rec_frames = 0;
+        rec_label = label;
         is_recording = true;
     }
     pthread_mutex_unlock(&sensor_mutex);
@@ -194,6 +200,14 @@ void SensorStateProcessor::stop_recording()
     write_string_to_recording(ss.str());
     close(recording_fd);
     pthread_mutex_unlock(&sensor_mutex);
+}
+
+void SensorStateProcessor::stop()
+{
+    // Stop recording as early as possible in order to have a sane end timestamp
+    if (is_recording)
+        stop_recording();
+    SensorStateThread::stop();
 }
 
 SensorStateProcessor::~SensorStateProcessor()

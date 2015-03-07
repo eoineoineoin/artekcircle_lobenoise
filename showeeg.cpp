@@ -143,7 +143,13 @@ gboolean my_idle_func(gpointer user_data)
 {
     SensorStateProcessor *ssp = (SensorStateProcessor *)user_data;
     gtk_widget_queue_draw(drawing_area);
-    gtk_label_set_text(GTK_LABEL(status_widget), ssp->get_status_text().c_str());
+    stringstream stext;
+    stext << ssp->get_status_text();
+    if (sensor_thread.get_is_recording())
+    {
+        stext << " Recording as '" << sensor_thread.get_rec_label() << "' (" << sensor_thread.rec_frames << " frames written so far).";
+    }
+    gtk_label_set_text(GTK_LABEL(status_widget), stext.str().c_str());
     return TRUE;
 }
 
