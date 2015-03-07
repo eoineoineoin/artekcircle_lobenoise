@@ -6,13 +6,15 @@ import sys
 
 recordings = {}
 cur_samples = None
+cur_metadata = None
 f = open("brainwave-recordings", "r")
 for ln in f.readlines():
     ln = ln.strip()
     if ln.startswith("#"):
         timestamp, label = ln[1:].split(" ", 1)
         cur_samples = []
-        recordings[label] = {'timestamp' : int(timestamp), 'samples' : cur_samples}
+        cur_metadata = {'timestamp' : int(timestamp), 'samples' : cur_samples, 'end_timestamp' : None}
+        recordings[label] = cur_metadata
     elif ln.startswith('+'):
         columns = ln[1:].split(" ")
         hexdata = columns[0]
@@ -37,5 +39,10 @@ for ln in f.readlines():
         samples = bindata[-7:-1]
         accel = tuple([(samples[i] * 256 + samples[i + 1] - (65536 if samples[i] & 128 else 0)) for i in range(0, len(samples), 2)])
         cur_samples.append({'timestamp' : timestamp, 'pdn' : pdn, 'misc' : misc, 'adc_data' : adc_data, 'accel' : accel, 'temperature' : bindata[-8], 'ed' : bindata[-1]})
-        print cur_samples[-1]
+        #print cur_samples[-1]
+    elif ln.startswith("-"):
+        cur_metadata['end_timestamp'] = ln[1:].split(" ", 1)[0]
 
+for name, content in recordings.items():
+    print "%20s %5d samples, start at %s" % (name, len(content['samples']), time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(content['timestamp'])))
+    

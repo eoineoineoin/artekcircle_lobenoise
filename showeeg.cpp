@@ -7,278 +7,27 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include <jack/jack.h>
-#include <jack/types.h>
 #include <sndfile.h>
 #include <opi_linux.h>
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
-#include <netinet/ip.h>
 #include <vector>
 #include "fft.h"
 #include "fsm.h"
+#include "sensor_thread.h"
 
 using namespace std;
 
+SensorStateProcessor sensor_thread;
 GtkWidget *main_window;
 GtkWidget *status_widget;
 GtkWidget *drawing_area;
 GtkWidget *record_button;
 GtkWidget *stop_button;
-gboolean is_recording;
-int recording_fd = -1;
-
-struct Grain
-{
-    vector<float> data;
-    bool play;
-    int readpos;
-    int delay;
-    
-    Grain();
-};
-
-Grain::Grain()
-{
-    play = false;
-    readpos = 0;
-    delay = 0;
-}
-
-class AudioOutput
-{
-protected:
-    jack_client_t *client;
-    jack_port_t *port;
-    vector<Grain> grains;
-public:
-    AudioOutput();
-    bool is_ok() const { return client != NULL; }
-    void mix(float *buffer, unsigned nsamples);
-    static int process(unsigned size, void *arg);
-    Grain *get_grain_to_fill(int overlap, int &maxdelay);
-    ~AudioOutput();
-};
-
-AudioOutput::AudioOutput()
-{
-    client = NULL;
-    
-    grains.resize(40);
-    
-    jack_status_t status;
-    jack_client_t *tmp_client = jack_client_open("brainwaves", (jack_options_t)0, &status);
-    if (tmp_client)
-    {
-        port = jack_port_register(tmp_client, "output", JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
-        if (port)
-        {
-            jack_set_process_callback(tmp_client, AudioOutput::process, this);
-            jack_activate(tmp_client);
-            jack_connect(tmp_client, "brainwaves:output", "system:playback_1");
-            jack_connect(tmp_client, "brainwaves:output", "system:playback_2");
-            client = tmp_client;
-        }
-        else
-            jack_client_close(tmp_client);
-    }
-}
-
-Grain *AudioOutput::get_grain_to_fill(int overlap, int &maxdelay)
-{
-    maxdelay = 0;
-    for(size_t i = 0; i < grains.size(); ++i)
-    {
-        int end = grains[i].delay + grains[i].data.size() - overlap;
-        if (end > maxdelay)
-            maxdelay = end;
-    }
-    for(size_t i = 0; i < grains.size(); ++i)
-    {
-        if (!grains[i].play)
-            return &grains[i];
-    }
-    return NULL;
-}
-
-void AudioOutput::mix(float *buffer, unsigned nsamples)
-{
-    for (unsigned g = 0; g < grains.size(); ++g)
-    {
-        Grain &grain = grains[g];
-        if (!grain.play)
-            continue;
-        if (grain.delay >= nsamples)
-        {
-            grain.delay -= nsamples;
-            continue;
-        }
-        for (unsigned i = grain.delay; i < nsamples && grain.readpos < grain.data.size(); ++i)
-        {
-            buffer[i] += grain.data[grain.readpos++];
-        }
-        grain.delay = 0;
-        if (grain.readpos >= grain.data.size())
-            grain.play = false;
-    }
-}
-
-int AudioOutput::process(unsigned size, void *arg)
-{
-    AudioOutput *self = (AudioOutput *)arg;
-    float *outdata = (float *)jack_port_get_buffer(self->port, size);
-    for (unsigned i = 0; i < size; ++i)
-    {
-        outdata[i] = 0.f;
-    }
-    self->mix(outdata, size);
-    return 0;
-}
-
-AudioOutput::~AudioOutput()
-{
-    if (client)
-        jack_client_close(client);
-}
-
-void write_string_to_recording(const string &s)
-{
-    int ofs = 0;
-    while(ofs < s.length())
-    {
-        int res = write(recording_fd, s.c_str() + ofs, s.length() - ofs);
-        if (res < 0)
-        {
-            if (res == EINTR) // interrupted system call
-                continue;
-            fprintf(stderr, "Problem while recording to %d: %s\n", recording_fd, strerror(errno));
-            return;
-        }
-        else
-        {
-            ofs += res;
-        }
-    }
-    fsync(recording_fd);
-}
 
 using namespace std;
 
-float data[512];
-int data_ptr = 0;
 GtkAdjustment *gain_adjustment;
-int sock;
-sockaddr_in send_addr;
-
-class SensorStateProcessor: public SensorStateThread
-{
-public:
-    AudioOutput *aout;
-    GtkWidget *status_widget, *waveform_widget;
-
-    SensorStateProcessor(AudioOutput *_aout, GtkWidget *status, GtkWidget *waveform);
-    virtual void process_data(const OPIPKT_t &pkt, const SensorDataPacket &sdp);
-
-    void sendblob(const void *blob, uint16_t len);
-};
-
-SensorStateProcessor::SensorStateProcessor(AudioOutput *_aout, GtkWidget *s, GtkWidget *w)
-{
-    aout = _aout;
-    status_widget = s;
-    waveform_widget = w;
-}
-
-void SensorStateProcessor::sendblob(const void *blob, uint16_t len)
-{
-    if (sendto(sock, blob, len, 0, (sockaddr *)&send_addr, sizeof(send_addr)) != len)
-        perror("sendto");
-}
-
-string dataqueue;
-
-#define debug_printf(...)
-
-void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPacket &sdp)
-{
-    if (is_recording)
-    {
-        stringstream line;
-        line << "+";
-        for (int i = 0; i < pkt.length; ++i)
-        {
-            line.fill('0');
-            line.width(2);
-            line << hex << right << (unsigned)pkt.payload[i];
-        }
-        line << endl;
-        write_string_to_recording(line.str());
-    }
-    // Sometimes packets arrive with all zeros in the ADC fields, discard those 
-    bool has_data = false;
-    // 
-    int first_valid_sample = 0;
-    debug_printf("PDN: %d\n", (int)sdp.frame_pdn);
-    debug_printf("Timestamp: %d\n", (int)sdp.timestamp_bytes[4]);
-    debug_printf("Data count %d: ", (int)sdp.data_count);
-    for (int i = first_valid_sample; i < sdp.data_count; i++)
-    {
-        if (sdp.data[i])
-        {
-            has_data = true;
-            break;
-        }
-    }
-    debug_printf("\n");
-    for (int i = first_valid_sample; i < sdp.data_count; i++)
-    {
-        debug_printf("%d, ", sdp.data[i]);
-        data[data_ptr] = sdp.data[i] / 16383.0;
-        data_ptr = (data_ptr + 1) & 511;
-    }
-    debug_printf("\n");
-    if (!has_data)
-        return;
-    
-    dataqueue += string((const char *)sdp.data, sdp.data_count * sizeof(sdp.data[0]));
-    if (dataqueue.length() > 256)
-        dataqueue.erase(0, dataqueue.length() - 256);
-    sendblob(dataqueue.c_str(), dataqueue.length());
-    
-    int frames = (sdp.data_count - first_valid_sample);
-    int delay = 0;
-    for (int ng = 0; ng < 10; ng++)
-    {
-        Grain *g = aout->get_grain_to_fill(frames / 2, delay);
-        if (g)
-        {
-            g->data.clear();
-            int repeat = 1;
-            int stretch = (44100 / 512) / 4;
-            int grainlen = frames * stretch * repeat;
-            g->data.resize(grainlen);
-            float envlen = 200.0;
-            for (int i = 0; i < grainlen; ++i)
-            {
-                float gain = 1.0;
-                if (i < envlen && i < grainlen / 2)
-                    gain = i / envlen;
-                else if (i >= grainlen - envlen)
-                    gain = (grainlen - i) / envlen;
-                int s1 = sdp.data[(i / stretch) % frames];
-                int s2 = sdp.data[(i / stretch + 1) % frames];
-                g->data[i] = (s1 + float(s2 - s1) * (i % stretch) / stretch) * gain * gain / 16383.0;
-            }
-            g->delay = delay;
-            g->readpos = 0;
-            g->play = true;
-            if (delay > 44100 / 4)
-                break;
-        }
-        else
-            break;
-    }
-}
 
 void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
 {
@@ -296,7 +45,7 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     float gain = pow(2.0, gtk_adjustment_get_value(gain_adjustment) / 6.0);
     for (int i = 0; i < 512; ++i)
     {
-        float val = gain * data[i];
+        float val = gain * sensor_thread.data[i];
         input[i] = val;
         avg += val;
     }
@@ -393,69 +142,53 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
 gboolean my_idle_func(gpointer user_data)
 {
     SensorStateProcessor *ssp = (SensorStateProcessor *)user_data;
-    gtk_widget_queue_draw(ssp->waveform_widget);
-    gtk_label_set_text(GTK_LABEL(ssp->status_widget), ssp->get_status_text().c_str());
+    gtk_widget_queue_draw(drawing_area);
+    gtk_label_set_text(GTK_LABEL(status_widget), ssp->get_status_text().c_str());
     return TRUE;
 }
 
 void update_record_controls()
 {
+    bool is_recording = sensor_thread.get_is_recording();
     gtk_widget_set_sensitive(record_button, !is_recording);
     gtk_widget_set_sensitive(stop_button, is_recording);
 }
 
 void record_button_clicked(GtkWidget *widget, gpointer ptr)
 {
-    if (is_recording)
+    if (sensor_thread.get_is_recording())
         return;
     GtkWidget *dialog;
     GtkDialogFlags flags = (GtkDialogFlags)(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT);
     dialog = gtk_dialog_new_with_buttons ("Record biosensor data",
                                           GTK_WINDOW(main_window),
                                           flags,
-                                          "_OK",
-                                          GTK_RESPONSE_ACCEPT,
                                           "_Cancel",
-                                          GTK_RESPONSE_REJECT,
+                                          GTK_RESPONSE_CANCEL,
+                                          "_OK",
+                                          GTK_RESPONSE_OK,
                                           NULL);
-    
     GtkWidget *hbox = gtk_hbox_new(FALSE, 5);
     gtk_box_pack_start(GTK_BOX(hbox), gtk_label_new("Identifier:"), FALSE, FALSE, 5);
     GtkWidget *entry = gtk_entry_new();
     gtk_box_pack_start(GTK_BOX(hbox), entry, TRUE, TRUE, 5);
+    gtk_entry_set_activates_default(GTK_ENTRY(entry), TRUE);
     GtkBox *content = GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog)));
     gtk_box_pack_start(content, hbox, FALSE, FALSE, 5);
     gtk_widget_show_all(GTK_WIDGET(content));
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
     
-    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT)
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK)
     {
-        recording_fd = open("brainwave-recordings", O_APPEND | O_CREAT | O_WRONLY, 0660);
-        if (recording_fd < 0)
-        {
-            perror("open");
-        }
-        else
-        {
-            stringstream ss;
-            ss << "#" << time(NULL) << " " << gtk_entry_get_text(GTK_ENTRY(entry)) << endl;
-            write_string_to_recording(ss.str());
-            is_recording = TRUE;
-            update_record_controls();
-        }
+        sensor_thread.start_recording(gtk_entry_get_text(GTK_ENTRY(entry)));
+        update_record_controls();
     }
     gtk_widget_destroy(dialog);
 }
 
 void stop_button_clicked(GtkWidget *widget, gpointer ptr)
 {
-    if (is_recording)
-    {
-        stringstream ss;
-        ss << "-" << time(NULL) << " stop" << endl;
-        write_string_to_recording(ss.str());
-        is_recording = FALSE;
-        close(recording_fd);
-    }
+    sensor_thread.stop_recording();
     update_record_controls();
 }
 
@@ -494,39 +227,26 @@ void create_ui()
     update_record_controls();
 }
 
+void run_main_loop()
+{
+    AudioOutput ao;
+    g_signal_connect(G_OBJECT(drawing_area), "draw", G_CALLBACK(draw), &sensor_thread);
+    g_idle_add(my_idle_func, &sensor_thread);
+
+    sensor_thread.start();
+    sensor_thread.set_audio_output(&ao);
+    gtk_main();
+    sensor_thread.stop();
+}
+
 int main(int argc, char *argv[])
 {
     load_sensor_config();
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0)
-        perror("socket");
-    sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = 0;
-    addr.sin_addr.s_addr = 0;
-    int reuse = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    if (bind(sock, (sockaddr *)&addr, sizeof(addr)))
-        perror("bind");
-
-    send_addr.sin_family = AF_INET;
-    send_addr.sin_port = ntohs(9999);
-    send_addr.sin_addr.s_addr = 0;
 
     gtk_init(&argc, &argv);
     
     create_ui();
-    
-    {
-        AudioOutput ao;
-        SensorStateProcessor sensor_thread(&ao, status_widget, drawing_area);
-        g_signal_connect(G_OBJECT(drawing_area), "draw", G_CALLBACK(draw), &sensor_thread);
-        g_idle_add(my_idle_func, &sensor_thread);
+    run_main_loop();
 
-        sensor_thread.start();
-        gtk_main();
-        sensor_thread.stop();
-    }
-    
     return 0;
 }
