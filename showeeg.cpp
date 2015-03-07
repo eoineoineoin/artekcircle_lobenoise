@@ -207,7 +207,9 @@ void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPac
         line << "+";
         for (int i = 0; i < pkt.length; ++i)
         {
-            line << hex << (unsigned)pkt.payload[i];
+            line.fill('0');
+            line.width(2);
+            line << hex << right << (unsigned)pkt.payload[i];
         }
         line << endl;
         write_string_to_recording(line.str());
@@ -451,8 +453,9 @@ void stop_button_clicked(GtkWidget *widget, gpointer ptr)
         stringstream ss;
         ss << "-" << time(NULL) << " stop" << endl;
         write_string_to_recording(ss.str());
+        is_recording = FALSE;
+        close(recording_fd);
     }
-    is_recording = FALSE;
     update_record_controls();
 }
 
