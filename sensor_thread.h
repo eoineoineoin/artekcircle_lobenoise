@@ -21,6 +21,9 @@ public:
     void start_recording(const char *label);
     void stop_recording();
     bool get_is_recording() const { return is_recording; }
+    bool get_is_playing_back() const { return inf != NULL; }
+    bool can_record() const { return inf == NULL; }
+    int get_playback_frame() const { return playback_frame; }
     std::string get_rec_label() const { return is_recording ? rec_label : std::string(); }
     void set_audio_output(AudioOutput *_aout);
     void write_string_to_recording(const std::string &s);

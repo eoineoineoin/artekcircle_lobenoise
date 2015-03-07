@@ -33,7 +33,7 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
 {
     SensorStateProcessor *ssp = (SensorStateProcessor *)user_data;
     SensorState ss = ssp->get_state();
-    if (ss != SST_RECEIVING && ss != SST_WAITING_FOR_DATA)
+    if (ss != SST_RECEIVING && ss != SST_WAITING_FOR_DATA && ss != SST_REPLAYING)
         return;
     guint width, height;
     GdkRGBA color;
@@ -149,6 +149,10 @@ gboolean my_idle_func(gpointer user_data)
     {
         stext << " Recording as '" << sensor_thread.get_rec_label() << "' (" << sensor_thread.rec_frames << " frames written so far).";
     }
+    if (sensor_thread.get_is_playing_back())
+    {
+        stext << " Current frame: " << sensor_thread.get_playback_frame();
+    }
     gtk_label_set_text(GTK_LABEL(status_widget), stext.str().c_str());
     return TRUE;
 }
@@ -156,7 +160,7 @@ gboolean my_idle_func(gpointer user_data)
 void update_record_controls()
 {
     bool is_recording = sensor_thread.get_is_recording();
-    gtk_widget_set_sensitive(record_button, !is_recording);
+    gtk_widget_set_sensitive(record_button, sensor_thread.can_record() && !is_recording);
     gtk_widget_set_sensitive(stop_button, is_recording);
 }
 
@@ -250,6 +254,15 @@ int main(int argc, char *argv[])
     load_sensor_config();
 
     gtk_init(&argc, &argv);
+    
+    if (argc > 1)
+    {
+        if (!sensor_thread.set_file_input(argv[1]))
+        {
+            fprintf(stderr, "Recording '%s' has not been found.", argv[1]);
+            return 1;
+        }
+    }
     
     create_ui();
     run_main_loop();
