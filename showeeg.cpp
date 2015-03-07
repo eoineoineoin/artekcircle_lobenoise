@@ -1,7 +1,11 @@
 #include <assert.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <jack/jack.h>
 #include <jack/types.h>
@@ -15,6 +19,14 @@
 #include "fsm.h"
 
 using namespace std;
+
+GtkWidget *main_window;
+GtkWidget *status_widget;
+GtkWidget *drawing_area;
+GtkWidget *record_button;
+GtkWidget *stop_button;
+gboolean is_recording;
+int recording_fd = -1;
 
 struct Grain
 {
@@ -129,6 +141,27 @@ AudioOutput::~AudioOutput()
         jack_client_close(client);
 }
 
+void write_string_to_recording(const string &s)
+{
+    int ofs = 0;
+    while(ofs < s.length())
+    {
+        int res = write(recording_fd, s.c_str() + ofs, s.length() - ofs);
+        if (res < 0)
+        {
+            if (res == EINTR) // interrupted system call
+                continue;
+            fprintf(stderr, "Problem while recording to %d: %s\n", recording_fd, strerror(errno));
+            return;
+        }
+        else
+        {
+            ofs += res;
+        }
+    }
+    fsync(recording_fd);
+}
+
 using namespace std;
 
 float data[512];
@@ -162,13 +195,30 @@ void SensorStateProcessor::sendblob(const void *blob, uint16_t len)
         perror("sendto");
 }
 
+string dataqueue;
+
+#define debug_printf(...)
+
 void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPacket &sdp)
 {
+    if (is_recording)
+    {
+        stringstream line;
+        line << "+";
+        for (int i = 0; i < pkt.length; ++i)
+        {
+            line << hex << (unsigned)pkt.payload[i];
+        }
+        line << endl;
+        write_string_to_recording(line.str());
+    }
     // Sometimes packets arrive with all zeros in the ADC fields, discard those 
     bool has_data = false;
     // 
     int first_valid_sample = 0;
-    printf("Data count %d: ", (int)sdp.data_count);
+    debug_printf("PDN: %d\n", (int)sdp.frame_pdn);
+    debug_printf("Timestamp: %d\n", (int)sdp.timestamp_bytes[4]);
+    debug_printf("Data count %d: ", (int)sdp.data_count);
     for (int i = first_valid_sample; i < sdp.data_count; i++)
     {
         if (sdp.data[i])
@@ -177,17 +227,21 @@ void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPac
             break;
         }
     }
-    printf("\n");
-    if (!has_data)
-        return;
+    debug_printf("\n");
     for (int i = first_valid_sample; i < sdp.data_count; i++)
     {
-        printf("%d, ", sdp.data[i]);
+        debug_printf("%d, ", sdp.data[i]);
         data[data_ptr] = sdp.data[i] / 16383.0;
         data_ptr = (data_ptr + 1) & 511;
     }
+    debug_printf("\n");
+    if (!has_data)
+        return;
     
-    sendblob(sdp.data, sdp.data_count * sizeof(sdp.data[0]));
+    dataqueue += string((const char *)sdp.data, sdp.data_count * sizeof(sdp.data[0]));
+    if (dataqueue.length() > 256)
+        dataqueue.erase(0, dataqueue.length() - 256);
+    sendblob(dataqueue.c_str(), dataqueue.length());
     
     int frames = (sdp.data_count - first_valid_sample);
     int delay = 0;
@@ -342,6 +396,100 @@ gboolean my_idle_func(gpointer user_data)
     return TRUE;
 }
 
+void update_record_controls()
+{
+    gtk_widget_set_sensitive(record_button, !is_recording);
+    gtk_widget_set_sensitive(stop_button, is_recording);
+}
+
+void record_button_clicked(GtkWidget *widget, gpointer ptr)
+{
+    if (is_recording)
+        return;
+    GtkWidget *dialog;
+    GtkDialogFlags flags = (GtkDialogFlags)(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT);
+    dialog = gtk_dialog_new_with_buttons ("Record biosensor data",
+                                          GTK_WINDOW(main_window),
+                                          flags,
+                                          "_OK",
+                                          GTK_RESPONSE_ACCEPT,
+                                          "_Cancel",
+                                          GTK_RESPONSE_REJECT,
+                                          NULL);
+    
+    GtkWidget *hbox = gtk_hbox_new(FALSE, 5);
+    gtk_box_pack_start(GTK_BOX(hbox), gtk_label_new("Identifier:"), FALSE, FALSE, 5);
+    GtkWidget *entry = gtk_entry_new();
+    gtk_box_pack_start(GTK_BOX(hbox), entry, TRUE, TRUE, 5);
+    GtkBox *content = GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog)));
+    gtk_box_pack_start(content, hbox, FALSE, FALSE, 5);
+    gtk_widget_show_all(GTK_WIDGET(content));
+    
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT)
+    {
+        recording_fd = open("brainwave-recordings", O_APPEND | O_CREAT | O_WRONLY, 0660);
+        if (recording_fd < 0)
+        {
+            perror("open");
+        }
+        else
+        {
+            stringstream ss;
+            ss << "#" << time(NULL) << " " << gtk_entry_get_text(GTK_ENTRY(entry)) << endl;
+            write_string_to_recording(ss.str());
+            is_recording = TRUE;
+            update_record_controls();
+        }
+    }
+    gtk_widget_destroy(dialog);
+}
+
+void stop_button_clicked(GtkWidget *widget, gpointer ptr)
+{
+    if (is_recording)
+    {
+        stringstream ss;
+        ss << "-" << time(NULL) << " stop" << endl;
+        write_string_to_recording(ss.str());
+    }
+    is_recording = FALSE;
+    update_record_controls();
+}
+
+void create_ui()
+{
+    main_window = GTK_WIDGET(gtk_window_new(GTK_WINDOW_TOPLEVEL));
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+
+    drawing_area = gtk_drawing_area_new();
+    gtk_widget_set_size_request(drawing_area, 1024, 512);
+
+    gain_adjustment = gtk_adjustment_new(0, -36, 36, 1, 6, 6);
+    GtkWidget *slider = gtk_scale_new(GTK_ORIENTATION_HORIZONTAL, gain_adjustment);
+    record_button = gtk_button_new_from_icon_name("media-record", GTK_ICON_SIZE_SMALL_TOOLBAR);
+    stop_button = gtk_button_new_from_icon_name("media-playback-stop", GTK_ICON_SIZE_SMALL_TOOLBAR);
+    
+    gtk_box_pack_start(GTK_BOX(hbox), gtk_label_new("Gain [dB]"), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), slider, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), record_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), stop_button, FALSE, FALSE, 0);
+        
+    status_widget = gtk_label_new("Status");
+    gtk_box_pack_start(GTK_BOX(vbox), status_widget, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox), hbox, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox), drawing_area, TRUE, TRUE, 0);
+    
+    gtk_container_add(GTK_CONTAINER(main_window), vbox);
+    GdkRGBA black = {0, 0, 0, 1};
+    gtk_widget_override_background_color(drawing_area, GTK_STATE_FLAG_NORMAL, &black);
+    gtk_widget_show_all(main_window);
+    g_signal_connect(G_OBJECT(main_window), "delete-event", G_CALLBACK(gtk_false), NULL);
+    g_signal_connect(G_OBJECT(main_window), "destroy", G_CALLBACK(gtk_main_quit), NULL);
+    g_signal_connect(G_OBJECT(record_button), "clicked", G_CALLBACK(record_button_clicked), NULL);
+    g_signal_connect(G_OBJECT(stop_button), "clicked", G_CALLBACK(stop_button_clicked), NULL);
+    update_record_controls();
+}
 
 int main(int argc, char *argv[])
 {
@@ -363,30 +511,13 @@ int main(int argc, char *argv[])
     send_addr.sin_addr.s_addr = 0;
 
     gtk_init(&argc, &argv);
-    GtkWidget *win = GTK_WIDGET(gtk_window_new(GTK_WINDOW_TOPLEVEL));
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    GtkWidget *dra = gtk_drawing_area_new();
-    gain_adjustment = gtk_adjustment_new(0, -36, 36, 1, 6, 6);
-    GtkWidget *slider = gtk_scale_new(GTK_ORIENTATION_HORIZONTAL, gain_adjustment);
-    GtkWidget *status_widget = gtk_label_new("Status");
-    gtk_widget_set_size_request(dra, 1024, 512);
-    gtk_box_pack_start(GTK_BOX(hbox), gtk_label_new("Gain [dB]"), FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(hbox), slider, TRUE, TRUE, 0);
-    gtk_box_pack_start(GTK_BOX(vbox), status_widget, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(vbox), hbox, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(vbox), dra, TRUE, TRUE, 0);
-    gtk_container_add(GTK_CONTAINER(win), vbox);
-    GdkRGBA black = {0, 0, 0, 1};
-    gtk_widget_override_background_color(dra, GTK_STATE_FLAG_NORMAL, &black);
-    gtk_widget_show_all(win);
-    g_signal_connect(G_OBJECT(win), "delete-event", G_CALLBACK(gtk_false), NULL);
-    g_signal_connect(G_OBJECT(win), "destroy", G_CALLBACK(gtk_main_quit), NULL);
+    
+    create_ui();
     
     {
         AudioOutput ao;
-        SensorStateProcessor sensor_thread(&ao, status_widget, dra);
-        g_signal_connect(G_OBJECT(dra), "draw", G_CALLBACK(draw), &sensor_thread);
+        SensorStateProcessor sensor_thread(&ao, status_widget, drawing_area);
+        g_signal_connect(G_OBJECT(drawing_area), "draw", G_CALLBACK(draw), &sensor_thread);
         g_idle_add(my_idle_func, &sensor_thread);
 
         sensor_thread.start();
