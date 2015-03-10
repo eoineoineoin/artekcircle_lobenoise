@@ -1,5 +1,5 @@
-CXXFLAGS += -I. `pkg-config --cflags glib-2.0 gtk+-3.0` -DGNU_SOURCE -D_LARGEFILE64_SOURCE
-LDFLAGS += -ljack -lsndfile -lm -lstdc++ `pkg-config --libs glib-2.0 gtk+-3.0` -lpthread
+CXXFLAGS += -I. `pkg-config --cflags glib-2.0 gtk+-3.0` -DGNU_SOURCE -D_LARGEFILE64_SOURCE -O2
+LDFLAGS += -ljack -lsndfile -lm -lstdc++ `pkg-config --libs glib-2.0 gtk+-3.0` -lpthread -lstdc++
 
 all: showeeg
 
@@ -8,7 +8,7 @@ sensor_thread.o: sensor_thread.h audio_output.h sensor.h fsm.h
 showeeg.o: sensor_thread.h audio_output.h sensor.h fsm.h
 
 showeeg: showeeg.o opi_linux.o sensor.o fsm.o audio_output.o sensor_thread.o
-
+	g++ -o showeeg showeeg.o opi_linux.o sensor.o fsm.o audio_output.o sensor_thread.o $(LDFLAGS)
 .PHONY: clean
 
 clean:
