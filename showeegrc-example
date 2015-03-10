@@ -1,0 +1,3 @@
+[sensor]
+# Allowed range is 11..26
+channel=15
