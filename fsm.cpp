@@ -1,4 +1,5 @@
 #include "fsm.h"
+#include <glib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -15,9 +16,17 @@ SensorStateThread::SensorStateThread()
     playback_frame = 0;
 }
 
+string SensorStateThread::get_recording_path() const
+{
+    char *tmp = g_build_filename(g_get_home_dir(), "brainwave-recordings", NULL);
+    string fn = tmp;
+    g_free(tmp);
+    return fn;
+}
+
 bool SensorStateThread::set_file_input(const char *label)
 {
-    inf = fopen("brainwave-recordings", "rb");
+    inf = fopen(get_recording_path().c_str(), "rb");
     if (!inf)
         return false;
     while(true)

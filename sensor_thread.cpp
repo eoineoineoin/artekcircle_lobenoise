@@ -172,7 +172,7 @@ void SensorStateProcessor::start_recording(const char *label)
     assert(!is_recording);
     assert(label);
     pthread_mutex_lock(&sensor_mutex);
-    recording_fd = open("brainwave-recordings", O_APPEND | O_CREAT | O_WRONLY, 0660);
+    recording_fd = open(get_recording_path().c_str(), O_APPEND | O_CREAT | O_WRONLY, 0660);
     if (recording_fd < 0)
     {
         perror("open");
