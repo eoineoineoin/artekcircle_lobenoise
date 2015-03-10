@@ -202,6 +202,12 @@ void stop_button_clicked(GtkWidget *widget, gpointer ptr)
     update_record_controls();
 }
 
+#if GTK_CHECK_VERSION(3,10,0)
+#define gtk_button_new_compatible(stock_name) gtk_button_new_from_icon_name(stock_name, GTK_ICON_SIZE_BUTTON)
+#else
+#define gtk_button_new_compatible(stock_name) gtk_button_new_from_stock(stock_name)
+#endif
+
 void create_ui()
 {
     main_window = GTK_WIDGET(gtk_window_new(GTK_WINDOW_TOPLEVEL));
@@ -213,8 +219,8 @@ void create_ui()
 
     gain_adjustment = gtk_adjustment_new(0, -36, 36, 1, 6, 6);
     GtkWidget *slider = gtk_scale_new(GTK_ORIENTATION_HORIZONTAL, gain_adjustment);
-    record_button = gtk_button_new_from_icon_name("media-record", GTK_ICON_SIZE_SMALL_TOOLBAR);
-    stop_button = gtk_button_new_from_icon_name("media-playback-stop", GTK_ICON_SIZE_SMALL_TOOLBAR);
+    record_button = gtk_button_new_compatible("media-record");
+    stop_button = gtk_button_new_compatible("media-playback-stop");
     
     gtk_box_pack_start(GTK_BOX(hbox), gtk_label_new("Gain [dB]"), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(hbox), slider, TRUE, TRUE, 0);
