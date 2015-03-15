@@ -29,6 +29,56 @@ using namespace std;
 
 GtkAdjustment *gain_adjustment;
 
+typedef complex<float> fcomplex;
+
+string virtual_chris(fcomplex waveform[512], fcomplex spectrum[512], float gain)
+{
+    string verdict;
+    bool spikes = false;
+    for (int i = 0; i < 512; i += 64)
+    {
+        bool empty = true;
+        float maxdelta = 0;
+        for (int j = 0; j < 64; ++j)
+        {
+            if (j > 3)
+                maxdelta = max(maxdelta, abs(waveform[i + j + 1] - waveform[i + j]));
+            if (waveform[i + j].real())
+                empty = false;
+        }
+        if (i > 0 && abs(waveform[i] - waveform[i - 1]) > maxdelta)
+        {
+            spikes = true;
+        }
+        if (empty)
+        {
+            verdict = "Gaps present in the signal. Radio communication glitch?";
+        }
+    }
+    float maxamp = 0.f;
+    for (int i = 0; i < 512; ++i)
+        maxamp = std::max(maxamp, waveform[i].real() / gain);
+
+    if (maxamp < 0.05)
+        verdict = "Very low signal level. Check electrode placement and excess salt on the skin.";
+    
+    if (spikes)
+        verdict = "Phantom spikes present. Make sure the electrodes have good contact with the skin.";
+    
+    if (std::abs(spectrum[50]) / gain > 5)
+        verdict = "Very strong 50Hz mains interference. There seems to be no contact with the skin at all.";
+    else if (std::abs(spectrum[50]) / gain > 1)
+        verdict = "50Hz mains interference. Make sure the electrodes have good contact with the skin.";
+    
+    if (std::abs(spectrum[60]) / gain > 1)
+        verdict = "60Hz interference from LCD screens. Make sure the electrodes have good contact with the skin.";
+    
+    if (maxamp > 0.25)
+        verdict = "Very high input level, likely due to noise or lack of skin contact. Check electrode placement.";
+    
+    return verdict;
+}
+
 void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
 {
     SensorStateProcessor *ssp = (SensorStateProcessor *)user_data;
@@ -37,7 +87,6 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
         return;
     guint width, height;
     GdkRGBA color;
-    typedef complex<float> fcomplex;
     dsp::fft<float, 9> fourier;
     
     fcomplex input[512], output[512];
@@ -51,18 +100,7 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     }
     avg /= 512;
     fourier.calculate(input, output, false);
-
-    // Determine the relative signal level in 'good' and 'bad' bands, scale
-    // them to size of those bands
-    float good = 0, bad = 0;
-    int threshold = 30;
-    for (int i = 1; i < 100; ++i)
-    {
-        if (i < threshold)
-            good += abs(output[i]) / (threshold - 1);
-        else
-            bad += abs(output[i]) / (99 - threshold);
-    }
+    string verdict = virtual_chris(input, output, gain);
     
     width = gtk_widget_get_allocated_width (dra);
     height = gtk_widget_get_allocated_height (dra);
@@ -97,7 +135,7 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
         cairo_line_to(cr, i, pty);
         cairo_stroke(cr);
     }
-
+    
     for (int i = 0; i < 512; i++)
     {
         float ptv = (input[i].real() - avg);
@@ -108,11 +146,11 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
         else
             cairo_line_to(cr, x, pty);
     }
-
+    
     //gtk_style_context_get_color (gtk_widget_get_style_context (dra),
     //                           (GtkStateFlags)0,
     //                           &color);
-    bool is_good = good > 4 * bad && good >= gain / 4 && bad < 2 * gain;
+    bool is_good = verdict.empty();
     color.red = is_good ? 0.0 : 1.0;
     color.green = is_good ? 1.0 : 0.0;
     color.blue = 0.0;
@@ -120,6 +158,16 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     gdk_cairo_set_source_rgba (cr, &color);
 
     cairo_stroke (cr);    
+
+    color.red = 1.0;
+    color.green = 0.5;
+    color.blue = 0.0;
+    color.alpha = 1.0;
+    gdk_cairo_set_source_rgba (cr, &color);
+    
+    cairo_move_to(cr, 20, 30);
+    cairo_set_font_size(cr, 15);
+    cairo_show_text(cr, verdict.c_str());
 
     color.red = 1.0;
     color.green = 1.0;
