@@ -154,11 +154,13 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     color.red = is_good ? 0.0 : 1.0;
     color.green = is_good ? 1.0 : 0.0;
     color.blue = 0.0;
-    color.alpha = 1.0;
+    color.alpha = ss == SST_WAITING_FOR_DATA ? 0.25 : 1.0;
     gdk_cairo_set_source_rgba (cr, &color);
 
     cairo_stroke (cr);    
 
+    if (ss == SST_WAITING_FOR_DATA)
+        verdict = "Waiting for data.";
     color.red = 1.0;
     color.green = 0.5;
     color.blue = 0.0;
