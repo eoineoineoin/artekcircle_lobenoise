@@ -30,25 +30,27 @@ using namespace std;
 GtkAdjustment *gain_adjustment;
 
 typedef complex<float> fcomplex;
+string last_msg;
+float last_msg_age;
 
 string virtual_chris(fcomplex waveform[512], fcomplex spectrum[512], float gain)
 {
     string verdict;
-    bool spikes = false;
+    int spikes = 0;
     for (int i = 0; i < 512; i += 64)
     {
         bool empty = true;
         float maxdelta = 0;
         for (int j = 0; j < 64; ++j)
         {
-            if (j > 3)
+            if (j > 5)
                 maxdelta = max(maxdelta, abs(waveform[i + j + 1] - waveform[i + j]));
             if (waveform[i + j].real())
                 empty = false;
         }
         if (i > 0 && abs(waveform[i] - waveform[i - 1]) > maxdelta)
         {
-            spikes = true;
+            spikes++;
         }
         if (empty)
         {
@@ -59,18 +61,18 @@ string virtual_chris(fcomplex waveform[512], fcomplex spectrum[512], float gain)
     for (int i = 0; i < 512; ++i)
         maxamp = std::max(maxamp, waveform[i].real() / gain);
 
-    if (maxamp < 0.05)
+    if (maxamp < 0.03)
         verdict = "Very low signal level. Check electrode placement and excess salt on the skin.";
     
-    if (spikes)
+    if (spikes >= 3)
         verdict = "Phantom spikes present. Make sure the electrodes have good contact with the skin.";
     
     if (std::abs(spectrum[50]) / gain > 5)
         verdict = "Very strong 50Hz mains interference. There seems to be no contact with the skin at all.";
-    else if (std::abs(spectrum[50]) / gain > 1)
+    else if (std::abs(spectrum[50]) / gain > 1.5)
         verdict = "50Hz mains interference. Make sure the electrodes have good contact with the skin.";
     
-    if (std::abs(spectrum[60]) / gain > 1)
+    if (std::abs(spectrum[60]) / gain > 1.5)
         verdict = "60Hz interference from LCD screens. Make sure the electrodes have good contact with the skin.";
     
     if (maxamp > 0.25)
@@ -165,6 +167,19 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     color.green = 0.5;
     color.blue = 0.0;
     color.alpha = 1.0;
+    if (verdict.empty())
+    {
+        verdict = last_msg;
+        color.alpha = 1.0 - 0.01 * last_msg_age;
+        if (color.alpha < 0)
+            color.alpha = 0;
+        last_msg_age++;
+    }
+    else
+    {
+        last_msg = verdict;
+        last_msg_age = 0;
+    }
     gdk_cairo_set_source_rgba (cr, &color);
     
     cairo_move_to(cr, 20, 30);
@@ -185,6 +200,15 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
         gdk_cairo_set_source_rgba (cr, &color);
         cairo_move_to(cr, x, 0);
         cairo_line_to(cr, x, height);
+        cairo_stroke(cr);
+    }
+    for (int i = 0; i < 512; i += 64)
+    {
+        int x = i * (width - 1) / 511;
+        color.alpha = 0.1;
+        gdk_cairo_set_source_rgba (cr, &color);
+        cairo_move_to(cr, x, height / 4);
+        cairo_line_to(cr, x, 3 * height / 4);
         cairo_stroke(cr);
     }
 }
