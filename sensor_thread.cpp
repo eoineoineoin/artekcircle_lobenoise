@@ -60,6 +60,12 @@ void SensorStateProcessor::write_string_to_recording(const string &s)
     fsync(recording_fd);
 }
 
+void SensorStateProcessor::update_gain(float gain)
+{
+    if (aout)
+        aout->set_gain(gain);
+}
+
 #define debug_printf(...)
 
 void SensorStateProcessor::process_data(const OPIPKT_t &pkt, const SensorDataPacket &sdp)

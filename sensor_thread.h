@@ -20,6 +20,7 @@ public:
     SensorStateProcessor();
     void start_recording(const char *label);
     void stop_recording();
+    void update_gain(float gain);
     bool get_is_recording() const { return is_recording; }
     bool get_is_playing_back() const { return inf != NULL; }
     bool can_record() const { return inf == NULL; }

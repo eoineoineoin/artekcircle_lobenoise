@@ -228,6 +228,8 @@ gboolean my_idle_func(gpointer user_data)
         stext << " Current frame: " << sensor_thread.get_playback_frame();
     }
     gtk_label_set_text(GTK_LABEL(status_widget), stext.str().c_str());
+    float gain = pow(2.0, gtk_adjustment_get_value(gain_adjustment) / 6.0);
+    ssp->aout->set_gain(gain);
     return TRUE;
 }
 

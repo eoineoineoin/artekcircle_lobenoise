@@ -10,6 +10,7 @@ Grain::Grain()
 AudioOutput::AudioOutput()
 {
     client = NULL;
+    gain = 0.f; // will be set by the client code
     
     grains.resize(40);
     
@@ -62,7 +63,7 @@ void AudioOutput::mix(float *buffer, unsigned nsamples)
         }
         for (unsigned i = grain.delay; i < nsamples && grain.readpos < grain.data.size(); ++i)
         {
-            buffer[i] += grain.data[grain.readpos++];
+            buffer[i] += gain * grain.data[grain.readpos++];
         }
         grain.delay = 0;
         if (grain.readpos >= grain.data.size())
