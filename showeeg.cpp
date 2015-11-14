@@ -84,6 +84,8 @@ string virtual_chris(fcomplex waveform[512], fcomplex spectrum[512], float gain)
 
 #include <atomic>
 #include <thread>
+#include <SerialStream.h>
+
 void push_ratio_to_clock(float frac)
 {
 	static union atomicAverage
@@ -134,15 +136,44 @@ void push_ratio_to_clock(float frac)
 	} s_data;
 	s_data.increase(frac);
 
-	std::thread s_thread([&]()
+	
+	static int _thread = 0;
+	if(!_thread)
 	{
-		//<eoin - 5hz enough?
-		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+		auto* g_thread  = new std::thread([&]()
+		{
+			LibSerial::SerialStream ardu;
+			ardu.Open("/dev/ttyACM1");
+			ardu.SetBaudRate(LibSerial::SerialStreamBuf::BAUD_9600);
+			ardu.SetCharSize(LibSerial::SerialStreamBuf::CHAR_SIZE_8);
+			char buf[100];
 
-		float curVal = s_data.retrieveAndReset();
-		printf("\nGOT AVG %f\n", curVal);
-	});
-	s_thread.detach();
+
+			while(true)
+			{
+				//<eoin - 5hz enough?
+				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+				float curVal = s_data.retrieveAndReset();
+				int destVal = 0;
+
+				//Values determined empirically:
+				const float minSeen = 0.4f;
+				const float maxSeen = 2.0f;
+				const int zeroSpeedServo = 96;
+				const int maxSpeedServo = 83;
+
+				float frac = std::max(std::min((curVal - minSeen) / (maxSeen - minSeen), 1.0f), 0.0f);
+				destVal = zeroSpeedServo - ((zeroSpeedServo - maxSpeedServo) * frac);
+				sprintf(buf, "%i", destVal);
+				fflush(stdout);
+				ardu << buf << "\n";
+				ardu.flush();
+			}
+		});
+		g_thread->detach();
+		_thread = 1;
+	}
 
 }
 
@@ -302,7 +333,7 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     cairo_set_font_size(cr, 15);
     cairo_show_text(cr, wavelevels.c_str());
     cairo_stroke(cr);
-    if (inverted.size() && is_valid)
+    if (inverted.size() && (is_valid || true))
     {
         color.red = 0.0;
         color.green = 1.0;
