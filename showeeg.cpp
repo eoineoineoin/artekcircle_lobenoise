@@ -118,7 +118,7 @@ void push_ratio_to_clock(float frac)
 			{
 				self.m_storage.store(m_storage.load());
 				loaded = self.m_storage.load();
-				reset.m_frac = self.m_frac;
+				reset.m_frac = self.m_frac / float(self.m_count);
 				reset.m_count = 1;
 			}while(!m_storage.compare_exchange_strong(loaded, reset.m_storage));
 
