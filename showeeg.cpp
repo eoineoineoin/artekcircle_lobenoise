@@ -11,6 +11,7 @@
 #include <opi_linux.h>
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
+#include <map>
 #include <vector>
 #include "fft.h"
 #include "fsm.h"
@@ -107,27 +108,32 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     width = gtk_widget_get_allocated_width (dra);
     height = gtk_widget_get_allocated_height (dra);
 
-
+    map<string, float> sums;
+    string wavetype;
+    float total = 0;
     for (int i = 0; i < width; i++)
     {
         int pt = i * 100 / (width - 1);
         const char *colorspec = "rgba(0,63,127,0.5)";
+        wavetype = "noise";
 
         // theta
         if (pt >= 1 && pt <= 3)
-            colorspec = "grey";
+            colorspec = "grey", wavetype = "delta";
         // theta
         if (pt >= 4 && pt <= 7)
-            colorspec = "blue";
+            colorspec = "blue", wavetype = "theta";
         // alpha
         if (pt >= 8 && pt <= 15)
-            colorspec = "green";
+            colorspec = "green", wavetype = "alpha";
         // beta
         if (pt >= 16 && pt <= 31)
-            colorspec = "orange";
+            colorspec = "orange", wavetype = "beta";
         // 50 Hz or 60 Hz ground hum
         if ((pt >= 49 && pt <= 51) || (pt >= 59 && pt <= 61))
-            colorspec = "red";
+            colorspec = "red", wavetype = "hum";
+        sums[wavetype] += abs(output[pt]);
+        total += abs(output[pt]);
         gdk_rgba_parse(&color, colorspec);
         gdk_cairo_set_source_rgba (cr, &color);
 
@@ -136,6 +142,19 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
         cairo_move_to(cr, i, height);
         cairo_line_to(cr, i, pty);
         cairo_stroke(cr);
+    }
+    string wavelevels;
+    map<float, string> inverted;
+    if (total > 0)
+    {
+        for(map<string, float>::const_iterator i = sums.begin(); i != sums.end(); ++i)
+            inverted[i->second / total] = i->first;
+        for(map<float, string>::const_iterator i = inverted.begin(); i != inverted.end(); ++i)
+        {
+            char buf[128];
+            sprintf(buf, "%s -> %f ", i->second.c_str(), i->first);
+            wavelevels += buf;
+        }
     }
     
     for (int i = 0; i < 512; i++)
@@ -160,6 +179,9 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     gdk_cairo_set_source_rgba (cr, &color);
 
     cairo_stroke (cr);    
+
+    bool is_valid = true;
+    is_valid = verdict.empty();
 
     if (ss == SST_WAITING_FOR_DATA)
         verdict = "Waiting for data.";
@@ -200,6 +222,38 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
         gdk_cairo_set_source_rgba (cr, &color);
         cairo_move_to(cr, x, 0);
         cairo_line_to(cr, x, height);
+        cairo_stroke(cr);
+    }
+
+    if (is_valid)
+    {
+        color.red = 1.0;
+        color.green = 1.0;
+        color.blue = 1.0;
+        color.alpha = 1.0;
+        gdk_cairo_set_source_rgba (cr, &color);
+    }
+
+    cairo_move_to(cr, 20, 50);
+    cairo_set_font_size(cr, 15);
+    cairo_show_text(cr, wavelevels.c_str());
+    cairo_stroke(cr);
+    if (inverted.size() && is_valid)
+    {
+        color.red = 0.0;
+        color.green = 1.0;
+        color.blue = 0.0;
+        color.alpha = 1.0;
+        gdk_cairo_set_source_rgba (cr, &color);
+        cairo_move_to(cr, 20, 80);
+        cairo_set_font_size(cr, 20);
+        cairo_show_text(cr, inverted.rbegin()->second.c_str());
+        cairo_stroke(cr);
+        char buf[1000];
+        sprintf(buf, "Beta:alpha = %f", sums["beta"] / sums["alpha"]);
+        cairo_move_to(cr, 20, 110);
+        cairo_set_font_size(cr, 20);
+        cairo_show_text(cr, buf);
         cairo_stroke(cr);
     }
     for (int i = 0; i < 512; i += 64)
