@@ -82,6 +82,70 @@ string virtual_chris(fcomplex waveform[512], fcomplex spectrum[512], float gain)
     return verdict;
 }
 
+#include <atomic>
+#include <thread>
+void push_ratio_to_clock(float frac)
+{
+	static union atomicAverage
+	{
+		struct 
+		{
+			int m_count;
+			float m_frac;
+		};
+		std::atomic<long> m_storage;
+
+		void increase(float increment)
+		{
+			atomicAverage newVal;
+			
+			long origStorage;
+			do
+			{
+				newVal.m_storage.store(m_storage.load());
+				origStorage = newVal.m_storage;
+				newVal.m_count += 1;
+				newVal.m_frac += increment;
+			}while(!m_storage.compare_exchange_strong(origStorage, newVal.m_storage));
+		}
+
+		float retrieveAndReset()
+		{
+			atomicAverage self;
+			atomicAverage reset;
+			long loaded;
+			do
+			{
+				self.m_storage.store(m_storage.load());
+				loaded = self.m_storage.load();
+				reset.m_frac = self.m_frac;
+				reset.m_count = 1;
+			}while(!m_storage.compare_exchange_strong(loaded, reset.m_storage));
+
+			return self.m_frac / float(self.m_count);
+		}
+
+		atomicAverage()
+		{
+			m_count = 0;
+			m_frac = 0.0f;
+		}
+
+	} s_data;
+	s_data.increase(frac);
+
+	std::thread s_thread([&]()
+	{
+		//<eoin - 5hz enough?
+		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+		float curVal = s_data.retrieveAndReset();
+		printf("\nGOT AVG %f\n", curVal);
+	});
+	s_thread.detach();
+
+}
+
 void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
 {
     SensorStateProcessor *ssp = (SensorStateProcessor *)user_data;
@@ -247,10 +311,11 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
         gdk_cairo_set_source_rgba (cr, &color);
         cairo_move_to(cr, 20, 80);
         cairo_set_font_size(cr, 20);
-        cairo_show_text(cr, inverted.rbegin()->second.c_str());
+        cairo_show_text(cr, inverted.rbegin()->second.c_str()); //<eoin - rbegin on an unordered collection?
         cairo_stroke(cr);
         char buf[1000];
         sprintf(buf, "Beta:alpha = %f", sums["beta"] / sums["alpha"]);
+		push_ratio_to_clock(sums["beta"] / sums["alpha"]);
         cairo_move_to(cr, 20, 110);
         cairo_set_font_size(cr, 20);
         cairo_show_text(cr, buf);

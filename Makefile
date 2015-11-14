@@ -1,4 +1,4 @@
-CXXFLAGS += -I. `pkg-config --cflags glib-2.0 gtk+-3.0` -DGNU_SOURCE -D_LARGEFILE64_SOURCE -O2
+CXXFLAGS += -I. `pkg-config --cflags glib-2.0 gtk+-3.0` -DGNU_SOURCE -D_LARGEFILE64_SOURCE -O2 -std=c++11 -Wno-deprecated-declarations
 LDFLAGS += -ljack -lsndfile -lm -lstdc++ `pkg-config --libs glib-2.0 gtk+-3.0` -lpthread -lstdc++
 
 all: showeeg
