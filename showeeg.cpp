@@ -84,6 +84,7 @@ string virtual_chris(fcomplex waveform[512], fcomplex spectrum[512], float gain)
 
 #include <atomic>
 #include <thread>
+#include <cmath>
 #include <SerialStream.h>
 
 void push_ratio_to_clock(float frac)
@@ -143,7 +144,7 @@ void push_ratio_to_clock(float frac)
 		auto* g_thread  = new std::thread([&]()
 		{
 			LibSerial::SerialStream ardu;
-			ardu.Open("/dev/ttyACM1");
+			ardu.Open("/dev/ttyACM2");
 			ardu.SetBaudRate(LibSerial::SerialStreamBuf::BAUD_9600);
 			ardu.SetCharSize(LibSerial::SerialStreamBuf::CHAR_SIZE_8);
 			char buf[100];
@@ -164,7 +165,20 @@ void push_ratio_to_clock(float frac)
 				const int maxSpeedServo = 83;
 
 				float frac = std::max(std::min((curVal - minSeen) / (maxSeen - minSeen), 1.0f), 0.0f);
-				destVal = zeroSpeedServo - ((zeroSpeedServo - maxSpeedServo) * frac);
+				static enum { LINEAR, LOGARITHMIC, EXPONENTIAL } scaleMethod = LOGARITHMIC;
+				switch(scaleMethod)
+				{
+					case LINEAR:
+						destVal = zeroSpeedServo - ((zeroSpeedServo - maxSpeedServo) * frac);
+						break;
+					case LOGARITHMIC:
+						destVal = zeroSpeedServo + (maxSpeedServo - zeroSpeedServo) * std::log2(1 + frac);
+						break;
+					case EXPONENTIAL:
+						destVal = zeroSpeedServo + (maxSpeedServo - zeroSpeedServo) * (std::pow(2,frac) - 1);
+						break;
+				}
+				printf("SENDING %f -> %f\n", frac, std::pow(2,frac) - 1);
 				sprintf(buf, "%i", destVal);
 				fflush(stdout);
 				ardu << buf << "\n";
@@ -345,7 +359,7 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
         cairo_show_text(cr, inverted.rbegin()->second.c_str()); //<eoin - rbegin on an unordered collection?
         cairo_stroke(cr);
         char buf[1000];
-        sprintf(buf, "Beta:alpha = %f", sums["beta"] / sums["alpha"]);
+        sprintf(buf, "Beta:alpha = %f B=%f A=%f", sums["beta"] / sums["alpha"], sums["beta"], sums["alpha"]);
 		push_ratio_to_clock(sums["beta"] / sums["alpha"]);
         cairo_move_to(cr, 20, 110);
         cairo_set_font_size(cr, 20);
