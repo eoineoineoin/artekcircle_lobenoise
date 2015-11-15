@@ -160,10 +160,8 @@ void push_ratio_to_clock(float frac)
 			//Values determined empirically:
 			const float minSeen = 0.4f;
 			const float maxSeen = 2.0f;
-			//const int zeroSpeedServo = atoi(optionsParser::instance().getOption("--minMotorSpeed","96"));
-			//const int maxSpeedServo = atoi(optionsParser::instance().getOption("--maxMotorSpeed", "83"));
-			const int zeroSpeedServo = 96;
-			const int maxSpeedServo = 83;
+			const int zeroSpeedServo = atoi(optionsParser::instance().getOption("--minMotorSpeed","96"));
+			const int maxSpeedServo = atoi(optionsParser::instance().getOption("--maxMotorSpeed", "83"));
 
 			static enum { LINEAR, LOGARITHMIC, EXPONENTIAL } scaleMethod = LOGARITHMIC;
 			const char* scaleMethodStr = optionsParser::instance().getOption("--seedScale", nullptr);
