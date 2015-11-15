@@ -359,7 +359,7 @@ void draw(GtkWidget *dra, cairo_t *cr, gpointer user_data)
     cairo_set_font_size(cr, 15);
     cairo_show_text(cr, wavelevels.c_str());
     cairo_stroke(cr);
-    if (inverted.size() && (is_valid || true))
+    if (inverted.size() && (is_valid || true)) //<eoin - hax always collect data for demo
     {
         color.red = 0.0;
         color.green = 1.0;
