@@ -4,11 +4,12 @@ LDFLAGS += -ljack -lsndfile -lm -lstdc++ `pkg-config --libs glib-2.0 gtk+-3.0` -
 all: showeeg
 
 audio_output.o: audio_output.h
+argsparse.o: argsparse.h
 sensor_thread.o: sensor_thread.h audio_output.h sensor.h fsm.h
-showeeg.o: sensor_thread.h audio_output.h sensor.h fsm.h
+showeeg.o: sensor_thread.h audio_output.h sensor.h fsm.h argsparse.h
 
-showeeg: showeeg.o opi_linux.o sensor.o fsm.o audio_output.o sensor_thread.o
-	g++ -o showeeg showeeg.o opi_linux.o sensor.o fsm.o audio_output.o sensor_thread.o $(LDFLAGS)
+showeeg: showeeg.o opi_linux.o sensor.o fsm.o audio_output.o sensor_thread.o argsparse.o
+	g++ -o showeeg $^ $(LDFLAGS)
 .PHONY: clean
 
 clean:

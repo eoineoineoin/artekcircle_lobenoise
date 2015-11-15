@@ -16,6 +16,7 @@
 #include "fft.h"
 #include "fsm.h"
 #include "sensor_thread.h"
+#include "argsparse.h"
 
 using namespace std;
 
@@ -136,36 +137,51 @@ void push_ratio_to_clock(float frac)
 
 	} s_data;
 	s_data.increase(frac);
-
 	
 	static int _thread = 0;
 	if(!_thread)
 	{
+		_thread = 1;
 		auto* g_thread  = new std::thread([&]()
 		{
 			LibSerial::SerialStream ardu;
-			ardu.Open("/dev/ttyACM2");
+			//ardu.Open("/dev/ttyACM2");
+			//ardu.Open("/dev/ttyUSB0");
+			const char* arduinoDevice = optionsParser::instance().getOption("--arduino-device", nullptr);
+			if(!arduinoDevice)
+			{
+				return;
+			}
+			ardu.Open(arduinoDevice);
 			ardu.SetBaudRate(LibSerial::SerialStreamBuf::BAUD_9600);
 			ardu.SetCharSize(LibSerial::SerialStreamBuf::CHAR_SIZE_8);
 			char buf[100];
 
+			//Values determined empirically:
+			const float minSeen = 0.4f;
+			const float maxSeen = 2.0f;
+			//const int zeroSpeedServo = atoi(optionsParser::instance().getOption("--minMotorSpeed","96"));
+			//const int maxSpeedServo = atoi(optionsParser::instance().getOption("--maxMotorSpeed", "83"));
+			const int zeroSpeedServo = 96;
+			const int maxSpeedServo = 83;
+
+			static enum { LINEAR, LOGARITHMIC, EXPONENTIAL } scaleMethod = LOGARITHMIC;
+			const char* scaleMethodStr = optionsParser::instance().getOption("--seedScale", nullptr);
+			if(scaleMethodStr && strcmp(scaleMethodStr, "EXPONENTIAL") == 0){ scaleMethod = EXPONENTIAL; }
+			else if(scaleMethodStr && strcmp(scaleMethodStr, "LINEAR") == 0){ scaleMethod = LINEAR; }
+			else if(scaleMethodStr && strcmp(scaleMethodStr, "LOGARITHMIC") == 0){ scaleMethod = LOGARITHMIC; }
+
 
 			while(true)
 			{
-				//<eoin - 5hz enough?
+				//<eoin - 1hz enough?
 				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
 				float curVal = s_data.retrieveAndReset();
 				int destVal = 0;
 
-				//Values determined empirically:
-				const float minSeen = 0.4f;
-				const float maxSeen = 2.0f;
-				const int zeroSpeedServo = 96;
-				const int maxSpeedServo = 83;
 
 				float frac = std::max(std::min((curVal - minSeen) / (maxSeen - minSeen), 1.0f), 0.0f);
-				static enum { LINEAR, LOGARITHMIC, EXPONENTIAL } scaleMethod = LOGARITHMIC;
 				switch(scaleMethod)
 				{
 					case LINEAR:
@@ -178,7 +194,6 @@ void push_ratio_to_clock(float frac)
 						destVal = zeroSpeedServo + (maxSpeedServo - zeroSpeedServo) * (std::pow(2,frac) - 1);
 						break;
 				}
-				printf("SENDING %f -> %f\n", frac, std::pow(2,frac) - 1);
 				sprintf(buf, "%i", destVal);
 				fflush(stdout);
 				ardu << buf << "\n";
@@ -186,7 +201,6 @@ void push_ratio_to_clock(float frac)
 			}
 		});
 		g_thread->detach();
-		_thread = 1;
 	}
 
 }
@@ -501,14 +515,28 @@ int main(int argc, char *argv[])
 
     gtk_init(&argc, &argv);
     
-    if (argc > 1)
+	optionsParser::instance().addOption("--arduino-device", "Block device for Arduino");
+	optionsParser::instance().addOption("--minMotorSpeed", "Min value for motor control (default 96)");
+	optionsParser::instance().addOption("--maxMotorSpeed", "Max value for motor control (default 83)");
+	optionsParser::instance().addOption("--speedScale", "LINEAR/LOGARITHMIC/EXPONENTIAL scale of speed");
+
+    if (argc == 2)
     {
+		if(strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)
+		{
+			optionsParser::instance().printHelp(stderr);
+			return 0;
+		}
         if (!sensor_thread.set_file_input(argv[1]))
         {
             fprintf(stderr, "Recording '%s' has not been found.", argv[1]);
             return 1;
         }
     }
+	else if(argc > 1)
+	{
+		optionsParser::instance().parseArgs(argc, argv);
+	}
     
     create_ui();
     run_main_loop();
