@@ -9,24 +9,55 @@ struct clock
 
 	int m_nextOpTime;
 	int m_nextSpeed;
+
+	void init(int speed, int travelTime, int frequency)
+	{
+		m_speed = speed;
+		m_travelTime = travelTime;
+		m_frequency = frequency;
+
+		m_stopSpeed = 95;
+
+		m_nextOpTime = 0;
+		m_nextSpeed = speed;
+	}
 };
 
 
-clock clocks[2];
+clock clocks[4];
 Servo servos[sizeof(clocks) / sizeof(clocks[0])];
 
 void setup() 
 { 
 	Serial.begin(9600);
-	servos[0].attach(9);
-	servos[1].attach(10);
+	servos[0].attach(8);
+	servos[1].attach(9);
+	servos[2].attach(10);
+	servos[3].attach(11);
 
-	clocks[0] = {90, 172, 1000, 96, 0, 90};
-	clocks[1] = {83, 160, 600, 95, 0, 83};
+	//Clock A - on pin 8
+	clocks[0].init(90, 440, 1000);
+
+	//Clock B - on pin 9
+	clocks[1].init(83, 365, 600);
+
+	//Clock C - on pin 10
+	clocks[2].init(88, 145, 550);
+
+	//Clock D - on pin 11
+	clocks[3].init(82, 290, 800);
+
+	//This servo is different for some reason:
+	clocks[3].m_stopSpeed = 96;
+
+	//Debug
+	pinMode(13, OUTPUT);
 } 
 
 void loop() 
 { 
+	//while(true){ interactiveLoop(); }
+
 	while(true)
 	{
 		int nextToChange = 0;
@@ -44,6 +75,9 @@ void loop()
 			clocks[c].m_nextOpTime -= ttlNextOp;
 		}
 		delay(ttlNextOp);
+		static int lastMode = 0;
+		digitalWrite(13, lastMode);
+		lastMode = !lastMode;
 
 		servos[nextToChange].write(clocks[nextToChange].m_nextSpeed);
 		if(clocks[nextToChange].m_nextSpeed == clocks[nextToChange].m_stopSpeed)
@@ -61,7 +95,6 @@ void loop()
 
 void interactiveLoop()
 {
-	/*
 	int speed = Serial.parseInt();
 
 	while(!speed)
@@ -76,16 +109,15 @@ void interactiveLoop()
 		time = Serial.parseInt();
 	}
 
-	int off = 96;
+
+	int servoId = 3;
+	int off = clocks[3].m_stopSpeed;
 
 	if(speed && time)
 	{
 		Serial.write("Gotcha\n");
-		servoA.write(speed);
-		servoA.write(speed);
+		servos[servoId].write(speed);
 		delay(time);
-		servoA.write(off);
-		servoB.write(off);
+		servos[servoId].write(off);
 	}
-	*/
 }
